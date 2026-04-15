@@ -1,103 +1,111 @@
 "use client";
 
-import { markInboxItemRead } from "@/app/(app)/inbox/actions";
+import { InboxAutoRefresh } from "@/components/inbox/inbox-auto-refresh";
+import { InboxPendingTableWithWorkflows } from "@/components/inbox/inbox-pending-table-workflows";
+import { AlertBanner } from "@/components/ui/alert-banner";
+import { dashboardInboxItemToFull } from "@/lib/inbox/dashboard-to-full-item";
 import type { DashboardInboxItem } from "@/lib/inbox/types";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-
-function formatWhen(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("de-DE", {
-    dateStyle: "short",
-    timeStyle: "short",
-  });
-}
+import type { TaskTypeRow } from "@/lib/task-types/defaults";
+import type { AreaRow } from "@/lib/tasks/types";
+import { PRODUCT_LABEL } from "@/lib/product-labels";
+import { Inbox } from "lucide-react";
+import { useEffect, useState } from "react";
 
 type Props = {
+  userId: string;
   items: DashboardInboxItem[];
+  progress: { todayTotal: number; todayDone: number };
+  areas: AreaRow[];
+  taskTypes: TaskTypeRow[];
   loadError: string | null;
+  areasLoadError?: string | null;
+  openCount?: number;
 };
 
-export function DashboardInboxClient({ items, loadError }: Props) {
-  const router = useRouter();
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+export function DashboardInboxClient({
+  userId,
+  items,
+  progress,
+  areas,
+  taskTypes,
+  loadError,
+  areasLoadError = null,
+  openCount,
+}: Props) {
+  const showBadge = openCount != null && openCount > 0 && !loadError;
+  const pending = items.map(dashboardInboxItemToFull);
+  const progressPct = progress.todayTotal > 0 ? Math.max(0, Math.min(100, Math.round((progress.todayDone / progress.todayTotal) * 100))) : 0;
+  const [counterAnim, setCounterAnim] = useState(false);
+  useEffect(() => {
+    setCounterAnim(true);
+    const t = window.setTimeout(() => setCounterAnim(false), 150);
+    return () => window.clearTimeout(t);
+  }, [openCount]);
 
-  async function handleRead(id: string) {
-    setActionError(null);
-    setPendingId(id);
-    try {
-      const res = await markInboxItemRead(id);
-      if (!res.ok) {
-        setActionError(res.error);
-        return;
-      }
-      router.refresh();
-    } finally {
-      setPendingId(null);
-    }
-  }
+  const combinedError = loadError ?? areasLoadError;
 
   return (
-    <section className="space-y-3" aria-labelledby="dashboard-inbox-heading">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <h2 id="dashboard-inbox-heading" className="text-lg font-semibold tracking-tight">
-          Inbox <span className="font-normal text-zinc-500">(ungelesen)</span>
-        </h2>
-        <Link
-          href="/inbox"
-          className="text-sm text-zinc-600 underline-offset-2 hover:underline dark:text-zinc-400"
+    <section
+      className="space-y-3 rounded-xl border border-leif-border/28 bg-leif-surface-soft px-3 pb-4 pt-3 sm:px-4 sm:pb-4 sm:pt-3.5 lg:px-5 shadow-[0_3px_12px_rgba(15,23,42,0.07)]"
+      aria-labelledby="dashboard-inbox-heading"
+    >
+      <InboxAutoRefresh userId={userId} />
+      <div className="flex flex-wrap items-end gap-2.5">
+        <h2
+          id="dashboard-inbox-heading"
+          className="min-w-0 flex-1 text-2xl font-semibold tracking-tight text-leif-text sm:text-[26px]"
         >
-          Zur Inbox-Seite
-        </Link>
+          {PRODUCT_LABEL.inbox}
+        </h2>
+        {showBadge ? (
+          <span
+            className={`inline-flex min-h-7 min-w-7 items-center justify-center rounded-full bg-leif-success/12 px-2.5 text-sm font-medium tabular-nums text-leif-success transition-all duration-150 ${counterAnim ? "-translate-y-0.5 opacity-90" : "translate-y-0 opacity-100"}`}
+            aria-label={`${openCount} offen`}
+          >
+            {openCount}
+          </span>
+        ) : null}
+        {!loadError && openCount === 0 ? (
+          <span className="text-sm font-normal text-leif-muted">· erledigt</span>
+        ) : null}
+      </div>
+      <div className="space-y-1.5">
+        <p className="text-[12px] text-leif-secondary">
+          Heute erledigt: <span className="font-medium text-leif-text">{progress.todayDone}</span> von{" "}
+          <span className="font-medium text-leif-text">{progress.todayTotal}</span>
+        </p>
+        <div className="h-1.5 overflow-hidden rounded-full bg-leif-surface-soft/90">
+          <div
+            className="h-full rounded-full bg-leif-primary transition-[width] duration-200 ease-out"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
       </div>
 
-      {loadError ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-200">
-          Inbox konnte nicht geladen werden: {loadError}
-        </p>
+      {combinedError ? (
+        <AlertBanner variant="error">Inbox konnte nicht geladen werden: {combinedError}</AlertBanner>
       ) : null}
 
-      {actionError ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-200">
-          {actionError}
-        </p>
+      {!combinedError && items.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-leif-border/90 bg-leif-canvas/40 px-6 py-12 text-center">
+          <Inbox className="mx-auto size-11 text-leif-muted" aria-hidden />
+          <p className="mt-4 text-base font-medium text-leif-text">Nichts Offenes</p>
+          <p className="mx-auto mt-2 max-w-md text-sm text-leif-secondary">
+            Keine offenen Inbox-Einträge — alles verarbeitet oder noch nichts eingegangen.
+          </p>
+        </div>
       ) : null}
 
-      {!loadError && items.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-4 py-6 text-sm text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/40 dark:text-zinc-400">
-          Keine ungelesenen Inbox-Einträge.
-        </p>
-      ) : null}
-
-      {!loadError && items.length > 0 ? (
-        <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-          {items.map((item) => (
-            <li key={item.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0 space-y-1">
-                <p className="whitespace-pre-wrap text-sm text-zinc-900 dark:text-zinc-100">
-                  {item.content}
-                </p>
-                <p className="text-xs text-zinc-500">
-                  Quelle: {item.source}
-                  {item.source_ref ? ` · ${item.source_ref}` : ""}
-                  <span className="mx-1.5">·</span>
-                  {formatWhen(item.created_at)}
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={pendingId === item.id}
-                onClick={() => handleRead(item.id)}
-                className="shrink-0 rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-900"
-              >
-                {pendingId === item.id ? "…" : "Als gelesen markieren"}
-              </button>
-            </li>
-          ))}
-        </ul>
+      {!combinedError && items.length > 0 ? (
+        <InboxPendingTableWithWorkflows
+          pending={pending}
+          areas={areas}
+          taskTypes={taskTypes}
+          loadError={null}
+          heading={null}
+          variant="dashboard"
+          stayOnPageAfterSparring
+        />
       ) : null}
     </section>
   );

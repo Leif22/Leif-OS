@@ -1,27 +1,53 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   createTask,
   updateTask,
   type RecommendationFeedbackInput,
   type TaskFormPayload,
 } from "@/app/(app)/tasks/actions";
-import type { AreaRow, TaskPriority, TaskStatus, TaskWithRelations } from "@/lib/tasks/types";
-import { TASK_PRIORITIES, TASK_STATUSES } from "@/lib/tasks/types";
+import { Button } from "@/components/ui/button";
+import { controlClass, textareaClass } from "@/components/ui/control-styles";
+import { PRODUCT_COPY } from "@/lib/product-labels";
+import { DEFAULT_TASK_TYPES } from "@/lib/task-types/defaults";
+import type { SparringTaskDraft } from "@/lib/sparring/task-draft";
+import type { TaskTypeRow } from "@/lib/task-types/defaults";
+import type { AreaRow, TaskPriority, TaskType, TaskWithRelations } from "@/lib/tasks/types";
+import { TASK_PRIORITIES } from "@/lib/tasks/types";
+import { useRouter } from "next/navigation";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 type Mode = "create" | "edit";
+type PlanChoice = "inbox" | "today" | "tomorrow" | "date";
 
 type Props = {
   open: boolean;
   mode: Mode;
   task: TaskWithRelations | null;
   areas: AreaRow[];
+  taskTypes?: TaskTypeRow[];
+  documents?: { id: string; title: string }[];
   onClose: () => void;
   /** Bei Bearbeitung aus dem Empfehlungsblock: Feedback „accepted“ nach Speichern loggen */
   recommendationFeedback?: RecommendationFeedbackInput | null;
+  /** Vorausfüllung + Verknüpfung beim Anlegen aus Sparring */
+  sparringCreateContext?: SparringTaskDraft | null;
+  /** Create-Modus: Bereich aus z. B. `/tasks?new=1&area=` */
+  initialCreateAreaId?: string | null;
 };
+
+function ymdFromLocalDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function addDaysYmd(ymd: string, delta: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + delta, 12, 0, 0, 0);
+  return ymdFromLocalDate(dt);
+}
 
 function toPayload(fd: FormData): TaskFormPayload {
   const est = fd.get("estimated_minutes");
@@ -31,16 +57,22 @@ function toPayload(fd: FormData): TaskFormPayload {
     const n = Number(estStr);
     estimated = Number.isFinite(n) ? Math.round(n) : null;
   }
+  const planChoice = String(fd.get("plan_choice") ?? "inbox") as PlanChoice;
+  const customDate = String(fd.get("planned_date") ?? "").trim();
+  const today = ymdFromLocalDate(new Date());
+  let plannedDate: string | null = null;
+  if (planChoice === "today") plannedDate = today;
+  else if (planChoice === "tomorrow") plannedDate = addDaysYmd(today, 1);
+  else if (planChoice === "date") plannedDate = customDate || null;
+
   return {
     title: String(fd.get("title") ?? ""),
     description: String(fd.get("description") ?? ""),
-    area_id: String(fd.get("area_id") ?? ""),
-    status: String(fd.get("status") ?? "open") as TaskStatus,
-    priority: String(fd.get("priority") ?? "medium") as TaskPriority,
-    tagsRaw: String(fd.get("tags") ?? ""),
-    due_date: String(fd.get("due_date") ?? "") || null,
-    planned_date: String(fd.get("planned_date") ?? "") || null,
+    task_type: (String(fd.get("task_type") ?? "").trim() || null) as TaskType | null,
+    priority: String(fd.get("priority") ?? "normal") as TaskPriority,
+    planned_date: plannedDate,
     estimated_minutes: estimated,
+    document_id: String(fd.get("document_id") ?? "").trim() || null,
   };
 }
 
@@ -49,14 +81,30 @@ export function TaskFormDialog({
   mode,
   task,
   areas,
+  taskTypes = DEFAULT_TASK_TYPES.map((t) => ({
+    id: t.key,
+    key: t.key,
+    label: t.label,
+    sort_order: t.sort_order,
+  })),
+  documents = [],
   onClose,
   recommendationFeedback = null,
+  sparringCreateContext = null,
+  initialCreateAreaId = null,
 }: Props) {
   const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const formId = useId();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [planChoice, setPlanChoice] = useState<PlanChoice>("inbox");
+
+  useEffect(() => {
+    if (!open) return;
+    if (task?.planned_date) setPlanChoice("date");
+    else setPlanChoice("inbox");
+  }, [open, task?.planned_date]);
 
   useEffect(() => {
     const el = dialogRef.current;
@@ -69,7 +117,7 @@ export function TaskFormDialog({
     }
   }, [open]);
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     const fd = new FormData(e.currentTarget);
@@ -78,7 +126,12 @@ export function TaskFormDialog({
     try {
       const res =
         mode === "create"
-          ? await createTask(payload)
+          ? await createTask(
+              payload,
+              sparringCreateContext
+                ? { source_sparring_chat_id: sparringCreateContext.chat_id }
+                : undefined,
+            )
           : task
             ? await updateTask(
                 task.id,
@@ -102,97 +155,122 @@ export function TaskFormDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="w-[min(100vw-2rem,32rem)] max-h-[min(90vh,40rem)] overflow-hidden rounded-lg border border-zinc-200 bg-background p-0 text-foreground shadow-xl dark:border-zinc-800 [&::backdrop]:bg-zinc-950/50"
+      className="w-[min(100vw-2rem,32rem)] max-h-[min(90vh,40rem)] overflow-hidden rounded-[12px] border border-leif-border bg-leif-surface p-0 text-leif-text shadow-leif [&::backdrop]:bg-black/25"
       onClose={() => {
         onClose();
       }}
     >
       <div className="flex max-h-[min(90vh,40rem)] flex-col">
-        <header className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h2 className="text-base font-semibold tracking-tight">
+        <header className="border-b border-leif-divider px-6 py-4">
+          <h2 className="text-base font-semibold tracking-tight text-leif-text">
             {mode === "create" ? "Task anlegen" : "Task bearbeiten"}
           </h2>
+          {mode === "create" && sparringCreateContext ? (
+            <p className="mt-1 text-[12px] text-leif-muted">
+              {PRODUCT_COPY.taskFromKiHint}
+            </p>
+          ) : null}
         </header>
         <form
           id={formId}
-          key={mode === "create" ? "new" : task?.id ?? "edit"}
+          key={
+            mode === "create"
+              ? `new-${sparringCreateContext?.chat_id ?? initialCreateAreaId ?? "plain"}`
+              : (task?.id ?? "edit")
+          }
           onSubmit={handleSubmit}
-          className="flex flex-1 flex-col gap-3 overflow-y-auto p-4"
+          className="flex flex-1 flex-col gap-4 overflow-y-auto p-6"
         >
           {error ? (
-            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-200">
+            <p className="rounded-[8px] border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
               {error}
             </p>
           ) : null}
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-zinc-700 dark:text-zinc-300">
-              Titel <span className="text-red-600">*</span>
+          <label className="flex flex-col gap-2 text-sm">
+            <span className="font-medium text-leif-secondary">
+              Titel <span className="text-leif-error">*</span>
             </span>
             <input
               name="title"
               type="text"
               required
               autoComplete="off"
-              defaultValue={task?.title ?? ""}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
+              defaultValue={task?.title ?? sparringCreateContext?.title ?? ""}
+              className={`${controlClass} text-base`}
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-zinc-700 dark:text-zinc-300">Beschreibung</span>
-            <textarea
-              name="description"
-              rows={3}
-              defaultValue={task?.description ?? ""}
-              className="resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-            />
-          </label>
+          <div className="grid grid-cols-2 gap-4">
+            <label className="flex flex-col gap-2 text-sm">
+              <span className="font-medium text-leif-secondary">
+                Dauer (Min.) {planChoice !== "inbox" ? <span className="text-leif-error">*</span> : null}
+              </span>
+              <input
+                name="estimated_minutes"
+                type="number"
+                min={0}
+                step={5}
+                placeholder={planChoice === "inbox" ? "optional" : "z. B. 30"}
+                defaultValue={task?.estimated_minutes ?? ""}
+                className={controlClass}
+                required={planChoice !== "inbox"}
+              />
+            </label>
+            <div className="flex flex-col gap-2 text-sm">
+              <span className="font-medium text-leif-secondary">Wann</span>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" className={controlClass} onClick={() => setPlanChoice("today")}>
+                  Heute
+                </button>
+                <button type="button" className={controlClass} onClick={() => setPlanChoice("tomorrow")}>
+                  Morgen
+                </button>
+                <button type="button" className={controlClass} onClick={() => setPlanChoice("date")}>
+                  Datum
+                </button>
+                <button type="button" className={controlClass} onClick={() => setPlanChoice("inbox")}>
+                  Inbox
+                </button>
+              </div>
+              <input type="hidden" name="plan_choice" value={planChoice} />
+            </div>
+          </div>
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-zinc-700 dark:text-zinc-300">
-              Bereich <span className="text-red-600">*</span>
-            </span>
-            <select
-              name="area_id"
-              required
-              defaultValue={task?.area_id ?? areas[0]?.id ?? ""}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-            >
-              {areas.length === 0 ? (
-                <option value="">Keine Bereiche</option>
-              ) : (
-                areas.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))
-              )}
-            </select>
-          </label>
+          {planChoice === "date" ? (
+            <label className="flex flex-col gap-2 text-sm">
+              <span className="font-medium text-leif-secondary">Datum</span>
+              <input
+                name="planned_date"
+                type="date"
+                defaultValue={task?.planned_date ?? ""}
+                className={controlClass}
+                required
+              />
+            </label>
+          ) : (
+            <input type="hidden" name="planned_date" value={task?.planned_date ?? ""} />
+          )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-zinc-700 dark:text-zinc-300">Status</span>
+          <div className="grid grid-cols-2 gap-4">
+            <label className="flex flex-col gap-2 text-sm">
+              <span className="font-medium text-leif-secondary">Art</span>
               <select
-                name="status"
-                defaultValue={task?.status ?? "open"}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
+                name="task_type"
+                defaultValue={task?.task_type ?? ""}
+                className={controlClass}
               >
-                {TASK_STATUSES.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
+                <option value="">—</option>
+                {taskTypes.map((t) => (
+                  <option key={t.id} value={t.key}>
+                    {t.label}
                   </option>
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-zinc-700 dark:text-zinc-300">Priorität</span>
-              <select
-                name="priority"
-                defaultValue={task?.priority ?? "medium"}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-              >
+            <label className="flex flex-col gap-2 text-sm">
+              <span className="font-medium text-leif-secondary">Priorität</span>
+              <select name="priority" defaultValue={task?.priority ?? "normal"} className={controlClass}>
                 {TASK_PRIORITIES.map((p) => (
                   <option key={p.value} value={p.value}>
                     {p.label}
@@ -202,71 +280,35 @@ export function TaskFormDialog({
             </label>
           </div>
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-zinc-700 dark:text-zinc-300">Tags</span>
-            <input
-              name="tags"
-              type="text"
-              placeholder="z. B. steuer, dringend"
-              defaultValue={task?.tags.join(", ") ?? ""}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
+          <label className="flex flex-col gap-2 text-sm">
+            <span className="font-medium text-leif-secondary">Beschreibung</span>
+            <textarea
+              name="description"
+              rows={3}
+              defaultValue={task?.description ?? sparringCreateContext?.description ?? ""}
+              className={textareaClass}
             />
-            <span className="text-xs text-zinc-500">Kommagetrennt</span>
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-zinc-700 dark:text-zinc-300">Fälligkeit</span>
-              <input
-                name="due_date"
-                type="date"
-                defaultValue={task?.due_date ?? ""}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-zinc-700 dark:text-zinc-300">Geplanter Tag</span>
-              <input
-                name="planned_date"
-                type="date"
-                defaultValue={task?.planned_date ?? ""}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-              />
-            </label>
-          </div>
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-zinc-700 dark:text-zinc-300">
-              Geschätzte Dauer (Minuten)
-            </span>
-            <input
-              name="estimated_minutes"
-              type="number"
-              min={0}
-              step={1}
-              placeholder="optional"
-              defaultValue={task?.estimated_minutes ?? ""}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-            />
+          <label className="flex flex-col gap-2 text-sm">
+            <span className="font-medium text-leif-secondary">Dokument (optional)</span>
+            <select name="document_id" defaultValue={task?.document_id ?? ""} className={controlClass}>
+              <option value="">—</option>
+              {documents.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.title}
+                </option>
+              ))}
+            </select>
           </label>
         </form>
-        <footer className="flex justify-end gap-2 border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <button
-            type="button"
-            className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-900"
-            onClick={onClose}
-            disabled={pending}
-          >
+        <footer className="flex justify-end gap-2 border-t border-leif-divider px-6 py-4">
+          <Button type="button" variant="secondary" onClick={onClose} disabled={pending}>
             Abbrechen
-          </button>
-          <button
-            type="submit"
-            form={formId}
-            disabled={pending || areas.length === 0}
-            className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-          >
+          </Button>
+          <Button type="submit" form={formId} variant="primary" disabled={pending}>
             {pending ? "Speichern…" : "Speichern"}
-          </button>
+          </Button>
         </footer>
       </div>
     </dialog>

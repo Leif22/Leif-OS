@@ -14,7 +14,9 @@ Der V1-Scope dient als harte Entscheidungsgrundlage dafür,
 
 ## 1. V1-Leitlinie
 
-V1 soll kein halbfertiges Abbild des kompletten Zielbilds sein, sondern ein **kleiner, robuster und täglich nutzbarer Kern**. 
+V1 soll kein halbfertiges Abbild des kompletten Zielbilds sein, sondern ein **kleiner, robuster und täglich nutzbarer Kern**.
+
+**Produkt-Leitidee** (vgl. `Produkt-Anforderung.md`): Leif OS ist ein **persönliches Strategie-, Planungs- und Entscheidungs-OS** mit den Ebenen **Input** (Inbox), **Thinking** (u. a. KI, Lebensbereiche, Gedächtnis, Notizen, Kontakte) und **Planning** (Tasks, Kalender). **E-Mail** ist höchstens **Input-/Randkanal**, kein Kernprodukt als Mailclient. 
 
 Im Fokus stehen:
 
@@ -57,11 +59,11 @@ Nicht verbindlich für V1 ist ein ausgebauter **Einstellungen**-Bereich als prio
 | Maintab | V1-Must-Haves | Später / Nicht V1 |
 |---|---|---|
 | **Dashboard** | Anzeige einer **empfohlenen nächsten Aufgabe** als zentraler Priorisierungsblock. Für diese Aufgabe sind die relevanten Task-Aktionen direkt ausführbar. Inbox als kompaktes operatives Werkzeug, beschränkt auf **ungelesene / noch nicht gesehene Eingänge**. Anzeige heutiger Termine sowie **heute geplanter Tasks** im Block „Heute“. Kurze Kapazitätsanzeige für heute. Einfache Anzeige des Gesamtvermögens und grundlegender Portfolio-Sichten. | Allgemeine Tasklisten oder umfangreiche Aufgabenübersichten direkt auf dem Dashboard. Tiefe Inbox-Interaktion direkt vom Dashboard aus, z.B. Massenaktionen oder vollständige Verlaufssicht. Komplexe Kapazitätsmodelle und ausgereifte automatische Tagesoptimierung. Historische Wertentwicklung, Performance-Analysen, feine Zeitraumfilter. |
-| **Inbox** | Vollständige Seite für ungeklärte Eingänge. Standardansicht für ungeklärte Items unabhängig vom Gelesen-Status sowie optionale Einblendung bereits verarbeiteter Items. Minimalaktionen pro Item: **Task anlegen, in Sparring öffnen, als Ergebnis übernehmen, als Entwurf erstellen, verwerfen, als gelesen markieren**. Einfache Gelesen-/Ungelesen-Logik. | Multi-Channel-Control-Center mit tiefen Speziallogiken. Ticketsystem-artige Workflow-Zustände, Delegationslogik, Snooze, Waiting, komplexe Batch-Verarbeitung. Vollständiges Kommunikationsarchiv. |
+| **Inbox** | Vollständige **Review-Seite** für ungeklärte Eingänge (**Capture & Review** – kein Mailpostfach, kein Task-Archiv). Standardansicht für ungeklärte Items unabhängig vom Gelesen-Status sowie optionale Einblendung bereits verarbeiteter Items. Minimalaktionen pro Item: **Task anlegen, in Sparring öffnen, als Ergebnis übernehmen, als Entwurf erstellen, verwerfen, als gelesen markieren**. Einfache Gelesen-/Ungelesen-Logik. | Multi-Channel-Control-Center mit tiefen Speziallogiken. Ticketsystem-artige Workflow-Zustände, Delegationslogik, Snooze, Waiting, komplexe Batch-Verarbeitung. Vollständiges Kommunikationsarchiv. |
 | **Tasks** | Globale Taskliste mit Statusführung (`inbox`, `open`, `planned`, `done`, `canceled`). Priorisierungsblock **„Empfohlene nächste Aufgabe“** auch auf der Tasks-Seite ganz oben. Task anlegen/bearbeiten mit mindestens Titel, Beschreibung, Bereich, Tags, Priorität und optional Planung/Terminbezug. Einfache Planung eines Tasks auf einen Tag. Sortierfunktion mindestens nach Fälligkeit, geplantem Tag / zeitlicher Verankerung, Priorität, Status und Bereich. | Mehrdimensionale Filterwelten, gespeicherte Views, komplexe View-UI. Wiederkehrende Tasks, Task-Templates. Drag-and-drop-Planung, kapazitätsabhängige Planung, automatische Statuswechselregeln. Zusätzliche Ticketsystem-Status wie `waiting` oder `in_progress`. |
-| **Sparring** | Freies Sparring ohne festen Kontext. Übersicht laufender Sparring-Kontexte. Sparring-Chat-Verlauf pro Gespräch. Aktionen aus Sparring heraus: **Ergebnis anlegen, Task aus Sparring anlegen, Entwurf erstellen**. Vorausagefülltes Task-Formular aus Sparring heraus. | Komplexes Sparring-Archiv mit ausgefeilter Such-, Vorlagen- oder Profil-Logik. Vollautomatisches Memory-Feeding kompletter Chatverläufe. |
+| **KI (Sparring)** | Freies Sparring ohne festen Kontext. Übersicht laufender Sparring-Kontexte. Chat-Verlauf pro Gespräch. Aktionen: **Eintrag ins Gedächtnis (Ergebnis), Task aus KI anlegen, Entwurf erstellen**. Vorausagefülltes Task-Formular. KI als **Denkpartner**, nicht als bloßes Chatfenster. | Komplexes Archiv mit ausgefeilter Such-, Vorlagen- oder Profil-Logik. Vollautomatisches Memory-Feeding kompletter Chatverläufe. |
 | **Kalender** | Operative Kalenderansicht mit mindestens **Tages- und einfacher Wochenansicht**. Sicht auf Vergangenheit, Gegenwart und Zukunft. Anzeige von Outlook-/Graph-Terminen. Sichtbarkeit geplanter Tasks im Kalender. Einfache Termin-Erstellung aus Leif OS in den Outlook-Kalender. Einfache Kapazitätsanzeige auf Tages-/Wochenebene. | Drag-and-drop-Planung und komplexe Zeitblock-Logik. Ausgereifte automatische Optimierung der Tages- oder Wochenplanung. Vollständiger Ersatz externer Kalender-Clients. |
-| **Bereiche** | Liste der vorhandenen Hauptbereiche als globaler Einstieg. Zugang zu einzelnen Bereichsseiten. Saubere Grundstruktur der Bereichsseiten mit Überblick, Projekten/Themencontainern, bereichsbezogenen Tasks, Ergebnissen, Sparring und Querverbindungen. | Hochkomplexe Bereichs-Dashboards, tief verschachtelte Unterstrukturen ohne klaren Nutzen. |
+| **Lebensbereiche** | Liste der vorhandenen Bereiche als globaler Einstieg. Zugang zu Bereichsseiten. Grundstruktur: **strategischer Kontext**, Unterthemen (Themencontainer), Querschnitt zu Tasks, Gedächtnis-Einträgen, KI, Kontakten, Notizen, Terminen – **keine** Ordner-/Dateihierarchie als Leitmetapher. | Hochkomplexe Domänen-Dashboards ohne klaren Nutzen; starre Mehrbenutzer-Rechte. |
 | **Personen** | Einfache Personenliste mit Vorname, Nachname, Kategorie sowie optional Anschrift und Geburtstag. Geburtstags-Erinnerungen und optionale vorgelagerte Geschenk-/Vorbereitungs-Erinnerung. Personen als eigene Objektklasse mit späteren Bezügen zu Aufgaben, Bereichen, Terminen und Kommunikation. | Vollwertiges CRM, komplexe Kontakt-Historien, Organisationsgraphen und tief ausgebaute Beziehungslogik. |
 | **Einstellungen** | Kein priorisierter V1-Baustein. | Eigener ausgebauter Fokusbereich im Neustart. |
 
@@ -94,14 +96,16 @@ Auf dem Dashboard erscheinen nur:
 
 ### 4.3 Inbox-Regel
 
-Ein Inbox-Item ist ein ungeklärter Eingang und kein dauerhafter Endzustand. 
+Ein Inbox-Item ist ein ungeklärter Eingang im **Input Layer** und kein dauerhafter Endzustand. Die Inbox ist **Capture- und Review-Ort**, nicht Arbeits- oder Ablageort.
 
 Inbox-Items müssen in V1 in einen sinnvollen Folgepfad überführt werden:
 - Task,
-- Sparring,
-- Ergebnis,
-- Entwurf,
-- Verwerfen. 
+- KI (Sparring),
+- Eintrag ins Gedächtnis (Ergebnis),
+- Entwurf (Notiz),
+- Verwerfen.
+
+**Als gelesen markieren** steuert nur die Aufmerksamkeit (z. B. Dashboard), ersetzt aber keine inhaltliche Review-Entscheidung. 
 
 ### 4.4 Task-Regel
 

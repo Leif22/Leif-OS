@@ -23,13 +23,22 @@ Das Datenmodell setzt das Objektmodell (→ Objektmodell.md) in konkrete Supabas
 - **Enums:** Status- und Typwerte werden als PostgreSQL-`text`-Spalten mit CHECK-Constraints abgebildet, nicht als Enum-Types (flexibler bei Migrationen).
 - **User-Kontext:** Alle Tabellen erhalten `user_id uuid REFERENCES auth.users(id)` für RLS (Row Level Security). Leif OS ist ein Single-User-System, aber RLS wird trotzdem gesetzt.
 
+### 1.1 Produktsprache vs. Tabellenname (Leitidee)
+
+In der **Produkt-Dokumentation** gelten:
+
+- **`areas`** = **Lebensbereiche** – strategische Kontexte, keine Ordner.
+- **`projects`** = **Unterthemen** (Themencluster innerhalb eines Lebensbereichs). Der historische Tabellen-/Code-Name „projects" ist **kein** Aufruf zur Projekt-/Datei-Ordner-Metapher im UI.
+
+Die konkreten Feldlisten unten bleiben die technische Referenz; fachliche Rollen siehe `Objektmodell.md` und `Produkt-Anforderung.md`.
+
 ---
 
 ## 2. Tabellen
 
-### 2.1 `areas` (Bereiche)
+### 2.1 `areas` (Bereiche / Lebensbereiche)
 
-Feste Kontexträume, nicht frei anlegbar.
+Strategische Kontexträume im Sinne von Lebensbereichen (Benennung und Anlage gemäß Produktregeln; nicht als Dateisystem-Root gedacht).
 
 | Spalte | Typ | Constraint | Beschreibung |
 |---|---|---|---|
@@ -46,9 +55,9 @@ Feste Kontexträume, nicht frei anlegbar.
 
 ---
 
-### 2.2 `projects` (Projekte / Themencontainer)
+### 2.2 `projects` (Unterthemen / Themencontainer)
 
-Untergeordnete Sammelpunkte innerhalb eines Bereichs.
+Untergeordnete **Themencluster** innerhalb eines Lebensbereichs (**Unterthemen** in der Produktsprache). Technischer Name der Tabelle: `projects`.
 
 | Spalte | Typ | Constraint | Beschreibung |
 |---|---|---|---|
@@ -248,7 +257,7 @@ Kurzlebige, vorläufige Informationen. Entwürfe als Untertyp.
 
 **Index:** `(user_id, type)`
 
-**Hinweis:** Notizen haben kein `title`-Feld. In der globalen Suche und in Listenansichten werden Notizen mit einem Content-Snippet (erste ~60 Zeichen) dargestellt. Siehe Implementation-Map Section 1.3.
+**Hinweis:** Notizen haben kein `title`-Feld. In der globalen Suche und in Listenansichten werden Notizen mit einem Content-Snippet (erste ~60 Zeichen) dargestellt. Die **gesamte** Abdeckung der globalen Suche (weitere Tabellen, Navigation) steht in `Implementation-Map.md`, Abschnitt 1.3 (Globale Suche).
 
 ---
 
@@ -516,4 +525,6 @@ CREATE TRIGGER set_updated_at
 | 2026-04-11 | `inbox_items` Section 2.8: Hinweis zu `processed_ref_id` Befüllung und fehlendem FK-Constraint ergänzt | Feld existierte, wurde aber nirgends beschrieben. Abgleich mit Implementation-Map Section 3.2. |
 | 2026-04-11 | `sparring_messages` Section 2.7: Hinweis zu `role = 'system'` Verwendung ergänzt | Abgleich mit Implementation-Map Section 5.3. |
 | 2026-04-11 | `notes` Section 2.11: Hinweis zu fehlendem `title`-Feld und Anzeige-Logik ergänzt | Abgleich mit Implementation-Map Section 1.3 (Globale Suche). |
+| 2026-04-11 | `notes` Section 2.11: Verweis auf globale Suche auf Impl.-Map §1.3 (vollständige Tabellenliste) präzisiert | Globale Suche umfasst neben Notizen u. a. Ergebnisse, Personen, Sparring; zentrale Beschreibung in der Impl.-Map. |
 | 2026-04-11 | Section 6 Migrationshinweise: Eintrag zu `processed_ref_id` (polymorphe Referenz) und V1-Vereinfachung files/calendar_events ergänzt | Dokumentation der bewussten Design-Entscheidungen für spätere Migrationsplanung. |
+| 2026-04-12 | Section 1.1 neu: Produktsprache (`areas` = Lebensbereiche, `projects` = Unterthemen); §2.1/2.2 Überschriften und Kurztexte an geschärfte Produktlogik angepasst | Abgleich mit Produkt-Anforderung/Objektmodell ohne Schemaänderung. |

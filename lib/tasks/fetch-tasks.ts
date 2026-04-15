@@ -1,18 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AreaRow, TaskPriority, TaskRow, TaskStatus, TaskWithRelations } from "./types";
-
-export function isTaskStatus(s: string): s is TaskStatus {
-  return (
-    s === "inbox" ||
-    s === "open" ||
-    s === "planned" ||
-    s === "done" ||
-    s === "canceled"
-  );
-}
+import type { AreaRow, TaskPriority, TaskRow, TaskType, TaskWithRelations } from "./types";
+import { deriveTaskStatus } from "./types";
 
 export function isTaskPriority(s: string): s is TaskPriority {
-  return s === "high" || s === "medium" || s === "low";
+  return s === "high" || s === "normal" || s === "low" || s === "medium";
 }
 
 export async function fetchTasksPageData(supabase: SupabaseClient): Promise<{
@@ -51,32 +42,8 @@ export async function fetchTasksPageData(supabase: SupabaseClient): Promise<{
 
   const tasks = (tasksRes.data ?? []) as TaskRow[];
   const areas = (areasRes.data ?? []) as AreaRow[];
-  const areaNameById = Object.fromEntries(areas.map((a) => [a.id, a.name]));
 
-  const taskIds = tasks.map((t) => t.id);
-  const tagsByTask: Record<string, string[]> = {};
-  if (taskIds.length > 0) {
-    const { data: tagRows, error: tagErr } = await supabase
-      .from("task_tags")
-      .select("task_id, tag")
-      .in("task_id", taskIds);
-    if (tagErr) {
-      return {
-        user: { id: user.id },
-        tasks: [],
-        areas,
-        loadError: tagErr.message,
-      };
-    }
-    for (const row of tagRows ?? []) {
-      const tid = row.task_id as string;
-      const tag = row.tag as string;
-      tagsByTask[tid] ??= [];
-      tagsByTask[tid].push(tag);
-    }
-  }
-
-  const merged = mergeTasksWithAreasAndTags(tasks, areas, tagsByTask);
+  const merged = mergeTasksWithAreasAndTags(tasks, areas, {});
 
   return { user: { id: user.id }, tasks: merged, areas, loadError: null };
 }
@@ -84,18 +51,23 @@ export async function fetchTasksPageData(supabase: SupabaseClient): Promise<{
 export function mergeTasksWithAreasAndTags(
   tasks: TaskRow[],
   areas: AreaRow[],
-  tagsByTask: Record<string, string[]>,
+  _tagsByTask: Record<string, string[]>,
 ): TaskWithRelations[] {
   const areaNameById = Object.fromEntries(areas.map((a) => [a.id, a.name]));
   return tasks.map((t) => {
-    const status = isTaskStatus(t.status) ? t.status : "open";
-    const priority = isTaskPriority(t.priority) ? t.priority : "medium";
+    const priority = t.priority === "medium" ? "normal" : t.priority;
+    const safePriority = isTaskPriority(priority) ? (priority as TaskPriority) : "normal";
+    const safeType = t.task_type ? String(t.task_type) : null;
+    const status = deriveTaskStatus(t);
     return {
       ...t,
       status,
-      priority,
-      area_name: areaNameById[t.area_id] ?? "—",
-      tags: (tagsByTask[t.id] ?? []).slice().sort((a, b) => a.localeCompare(b)),
+      raw_status: t.status,
+      priority: safePriority,
+      task_type: safeType,
+      source_sparring_chat_id: t.source_sparring_chat_id ?? null,
+      area_name: t.area_id ? (areaNameById[t.area_id] ?? "—") : "—",
+      document_title: null,
     };
   });
 }

@@ -36,7 +36,7 @@ export function duePressureNormalized(diffDays: number): number {
 
 export function priorityNormalized(p: TaskPriority): number {
   if (p === "high") return 1;
-  if (p === "medium") return 0.5;
+  if (p === "normal") return 0.5;
   return 0.1;
 }
 
@@ -107,7 +107,7 @@ export function pickRecommendedTask(
   tasks: TaskWithRelations[],
   todayYmd: string,
 ): { task: TaskWithRelations; breakdown: RecommendationBreakdown } | null {
-  const candidates = tasks.filter((t) => t.status === "open" || t.status === "planned");
+  const candidates = tasks.filter((t) => t.status !== "erledigt");
   if (candidates.length === 0) return null;
 
   let best = candidates[0];

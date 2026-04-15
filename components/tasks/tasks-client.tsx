@@ -1,17 +1,29 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { RecommendationFeedbackInput } from "@/app/(app)/tasks/actions";
-import type { RecommendationBreakdown } from "@/lib/tasks/recommended";
-import type { AreaRow, TaskWithRelations } from "@/lib/tasks/types";
 import {
   PRIORITY_ORDER,
   STATUS_ORDER,
   TASK_PRIORITIES,
   TASK_STATUSES,
 } from "@/lib/tasks/types";
+import type { RecommendationFeedbackInput } from "@/app/(app)/tasks/actions";
+import { PRODUCT_COPY, PRODUCT_LABEL } from "@/lib/product-labels";
+import type { SparringTaskDraft } from "@/lib/sparring/task-draft";
+import type { TaskTypeRow } from "@/lib/task-types/defaults";
+import type { RecommendationBreakdown } from "@/lib/tasks/recommended";
+import type { AreaRow, TaskWithRelations } from "@/lib/tasks/types";
+import { taskPriorityChipTone, taskStatusChipTone } from "@/lib/tasks/chip-tones";
 import { RecommendedTaskBlock } from "./recommended-task-block";
 import { TaskFormDialog } from "./task-form-dialog";
+import { TaskInlineEditor } from "./task-inline-editor";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { PageHeader } from "@/components/ui/page-header";
+import { Button } from "@/components/ui/button";
+import { FilterBar, FilterField } from "@/components/ui/filter-bar";
+import { TableShell } from "@/components/ui/table-shell";
+import { StatusChip } from "@/components/ui/status-chip";
+import { controlClass } from "@/components/ui/control-styles";
 
 type SortMode = "due_asc" | "due_desc" | "priority" | "status";
 
@@ -43,8 +55,12 @@ function priorityLabel(p: string): string {
 type Props = {
   tasks: TaskWithRelations[];
   areas: AreaRow[];
+  taskTypes: TaskTypeRow[];
+  documents: { id: string; title: string }[];
   recommended: { task: TaskWithRelations; breakdown: RecommendationBreakdown } | null;
   recommendedError: string | null;
+  /** Serverseitig aus `?from_sparring=` gebaut; nach URL-Clear im Client weiter genutzt */
+  sparringTaskDraft: SparringTaskDraft | null;
 };
 
 function acceptedFeedback(
@@ -62,22 +78,83 @@ function acceptedFeedback(
   };
 }
 
-export function TasksClient({ tasks, areas, recommended, recommendedError }: Props) {
+export function TasksClient({
+  tasks,
+  areas,
+  taskTypes,
+  documents,
+  recommended,
+  recommendedError,
+  sparringTaskDraft,
+}: Props) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [statusFilter, setStatusFilter] = useState<string>("");
-  const [areaFilter, setAreaFilter] = useState<string>("");
   const [priorityFilter, setPriorityFilter] = useState<string>("");
   const [sortMode, setSortMode] = useState<SortMode>("due_asc");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [editingTask, setEditingTask] = useState<TaskWithRelations | null>(null);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [editRecommendationFeedback, setEditRecommendationFeedback] =
     useState<RecommendationFeedbackInput | null>(null);
+  const [sparPersist, setSparPersist] = useState<SparringTaskDraft | null>(null);
+  const [createAreaPrefill, setCreateAreaPrefill] = useState<string | null>(null);
+
+  // Sync dialog state from URL query once after navigation (Next.js clears query in same tick).
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional URL→dialog hydration */
+  useEffect(() => {
+    const wantNew = searchParams.get("new") === "1";
+    const fromSparring = searchParams.get("from_sparring");
+    const fromSparringMessage = searchParams.get("from_sparring_message");
+    const taskId = searchParams.get("task");
+    const areaId = searchParams.get("area");
+    if (!wantNew && !taskId && !areaId && !fromSparring && !fromSparringMessage) return;
+
+    if (wantNew && (fromSparring || fromSparringMessage)) {
+      setCreateAreaPrefill(null);
+      setDialogMode("create");
+      setEditingTask(null);
+      setEditRecommendationFeedback(null);
+      setSparPersist(sparringTaskDraft);
+      setDialogOpen(true);
+    } else if (wantNew) {
+      const a = searchParams.get("area");
+      setCreateAreaPrefill(a && areas.some((ar) => ar.id === a) ? a : null);
+      setSparPersist(null);
+      setDialogMode("create");
+      setEditingTask(null);
+      setEditRecommendationFeedback(null);
+      setDialogOpen(true);
+    }
+
+    if (taskId) {
+      const t = tasks.find((x) => x.id === taskId);
+      if (t) {
+        setDialogMode("edit");
+        setEditingTask(t);
+        setExpandedTaskId(t.id);
+        if (recommended && t.id === recommended.task.id) {
+          setEditRecommendationFeedback(acceptedFeedback(t.id, recommended.breakdown));
+        } else {
+          setEditRecommendationFeedback(null);
+        }
+        setDialogOpen(false);
+      }
+    }
+
+    if (areaId) void areaId;
+
+    router.replace(pathname, { scroll: false });
+  }, [searchParams, tasks, areas, recommended, pathname, router, sparringTaskDraft]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const filteredSorted = useMemo(() => {
     let list = tasks.slice();
     if (statusFilter) list = list.filter((t) => t.status === statusFilter);
-    if (areaFilter) list = list.filter((t) => t.area_id === areaFilter);
     if (priorityFilter) list = list.filter((t) => t.priority === priorityFilter);
 
     list.sort((a, b) => {
@@ -104,67 +181,58 @@ export function TasksClient({ tasks, areas, recommended, recommendedError }: Pro
       return a.title.localeCompare(b.title, "de");
     });
     return list;
-  }, [tasks, statusFilter, areaFilter, priorityFilter, sortMode]);
+  }, [tasks, statusFilter, priorityFilter, sortMode]);
 
   function openCreate() {
+    setCreateAreaPrefill(null);
+    setSparPersist(null);
     setDialogMode("create");
     setEditingTask(null);
     setEditRecommendationFeedback(null);
     setDialogOpen(true);
   }
 
-  function openEdit(t: TaskWithRelations) {
-    setDialogMode("edit");
+  function toggleInlineEdit(t: TaskWithRelations) {
+    setExpandedTaskId((current) => (current === t.id ? null : t.id));
     setEditingTask(t);
-    if (recommended && t.id === recommended.task.id) {
-      setEditRecommendationFeedback(acceptedFeedback(t.id, recommended.breakdown));
-    } else {
-      setEditRecommendationFeedback(null);
-    }
-    setDialogOpen(true);
   }
 
   function closeDialog() {
     setDialogOpen(false);
+    setCreateAreaPrefill(null);
     setEditingTask(null);
     setEditRecommendationFeedback(null);
+    setSparPersist(null);
   }
 
+  const selectClass = `${controlClass} min-w-0`;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      <PageHeader
+        title={PRODUCT_LABEL.tasks}
+        description="Priorisierte Liste mit klaren Status- und Prioritätskennzeichnungen."
+        actions={
+          <Button type="button" onClick={openCreate}>
+            {PRODUCT_COPY.plusMenuTask}
+          </Button>
+        }
+      />
+
       <RecommendedTaskBlock
         task={recommended?.task ?? null}
         breakdown={recommended?.breakdown ?? null}
         areas={areas}
+        taskTypes={taskTypes}
         recommendationError={recommendedError}
       />
 
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
-        <div className="flex flex-col items-end gap-1">
-          <button
-            type="button"
-            onClick={openCreate}
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-            disabled={areas.length === 0}
-          >
-            Task anlegen
-          </button>
-          {areas.length === 0 ? (
-            <p className="max-w-xs text-right text-xs text-amber-700 dark:text-amber-300">
-              Es sind keine Bereiche geladen. Ohne Bereich kann kein Task angelegt werden.
-            </p>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-zinc-600 dark:text-zinc-400">Status</span>
+      <FilterBar>
+        <FilterField label="Status">
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="min-w-[10rem] rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
+            className={`${selectClass} min-w-[10rem]`}
           >
             <option value="">Alle</option>
             {TASK_STATUSES.map((s) => (
@@ -173,28 +241,12 @@ export function TasksClient({ tasks, areas, recommended, recommendedError }: Pro
               </option>
             ))}
           </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-zinc-600 dark:text-zinc-400">Bereich</span>
-          <select
-            value={areaFilter}
-            onChange={(e) => setAreaFilter(e.target.value)}
-            className="min-w-[12rem] rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-          >
-            <option value="">Alle</option>
-            {areas.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-zinc-600 dark:text-zinc-400">Priorität</span>
+        </FilterField>
+        <FilterField label="Priorität">
           <select
             value={priorityFilter}
             onChange={(e) => setPriorityFilter(e.target.value)}
-            className="min-w-[10rem] rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
+            className={`${selectClass} min-w-[10rem]`}
           >
             <option value="">Alle</option>
             {TASK_PRIORITIES.map((p) => (
@@ -203,74 +255,95 @@ export function TasksClient({ tasks, areas, recommended, recommendedError }: Pro
               </option>
             ))}
           </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-zinc-600 dark:text-zinc-400">Sortierung</span>
+        </FilterField>
+        <FilterField label="Sortierung">
           <select
             value={sortMode}
             onChange={(e) => setSortMode(e.target.value as SortMode)}
-            className="min-w-[14rem] rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
+            className={`${selectClass} min-w-[14rem]`}
           >
             <option value="due_asc">Fälligkeit (früheste zuerst)</option>
             <option value="due_desc">Fälligkeit (späteste zuerst)</option>
             <option value="priority">Priorität (hoch → niedrig)</option>
             <option value="status">Status</option>
           </select>
-        </label>
-      </div>
+        </FilterField>
+      </FilterBar>
 
-      <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
-        <table className="w-full min-w-[56rem] border-collapse text-left text-sm">
+      <TableShell>
+        <table className="w-full min-w-[56rem] border-collapse text-left text-[14px]">
           <thead>
-            <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/50">
-              <th className="px-3 py-2 font-medium">Titel</th>
-              <th className="px-3 py-2 font-medium">Bereich</th>
-              <th className="px-3 py-2 font-medium">Status</th>
-              <th className="px-3 py-2 font-medium">Priorität</th>
-              <th className="px-3 py-2 font-medium">Fälligkeit</th>
-              <th className="px-3 py-2 font-medium">Tags</th>
+            <tr className="border-b border-leif-divider bg-white">
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">Titel</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">
+                Art
+              </th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">Status</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">Priorität</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">Geplant</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">Dauer</th>
             </tr>
           </thead>
           <tbody>
             {filteredSorted.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-zinc-500">
+                <td colSpan={6} className="px-4 py-16 text-center text-[13px] text-leif-secondary">
                   Keine Tasks für die aktuellen Filter.
                 </td>
               </tr>
             ) : (
               filteredSorted.map((t) => (
-                <tr
-                  key={t.id}
-                  className="cursor-pointer border-b border-zinc-100 hover:bg-zinc-50 dark:border-zinc-800/80 dark:hover:bg-zinc-900/40"
-                  onClick={() => openEdit(t)}
-                >
-                  <td className="px-3 py-2 font-medium text-zinc-900 dark:text-zinc-100">
-                    {t.title}
-                  </td>
-                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">{t.area_name}</td>
-                  <td className="px-3 py-2">{statusLabel(t.status)}</td>
-                  <td className="px-3 py-2">{priorityLabel(t.priority)}</td>
-                  <td className="px-3 py-2 tabular-nums">{formatDate(t.due_date)}</td>
-                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
-                    {t.tags.length ? t.tags.join(", ") : "—"}
-                  </td>
-                </tr>
+                <Fragment key={t.id}>
+                  <tr className="cursor-pointer transition-colors duration-150" onClick={() => toggleInlineEdit(t)}>
+                    <td className="px-4 py-3 align-middle text-[15px] font-semibold text-leif-text">{t.title}</td>
+                    <td className="px-4 py-3 align-middle">
+                      <StatusChip tone="neutral">
+                        {taskTypes.find((x) => x.key === t.task_type)?.label ?? "—"}
+                      </StatusChip>
+                    </td>
+                    <td className="px-4 py-3 align-middle">
+                      <StatusChip tone={taskStatusChipTone(t.status)}>{statusLabel(t.status)}</StatusChip>
+                    </td>
+                    <td className="px-4 py-3 align-middle">
+                      <StatusChip tone={taskPriorityChipTone(t.priority)}>{priorityLabel(t.priority)}</StatusChip>
+                    </td>
+                    <td className="px-4 py-3 align-middle tabular-nums text-leif-secondary">
+                      {formatDate(t.planned_date)}
+                    </td>
+                    <td className="px-4 py-3 align-middle text-leif-secondary">
+                      {t.estimated_minutes ? `${t.estimated_minutes} min` : "—"}
+                    </td>
+                  </tr>
+                  {expandedTaskId === t.id ? (
+                    <tr>
+                      <td colSpan={6} className="bg-[#fbfcfe] px-4 py-3">
+                        <TaskInlineEditor
+                          task={editingTask && editingTask.id === t.id ? editingTask : t}
+                          taskTypes={taskTypes}
+                          documents={documents}
+                          onRequestClose={() => setExpandedTaskId(null)}
+                        />
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
               ))
             )}
           </tbody>
         </table>
-      </div>
+      </TableShell>
 
       <TaskFormDialog
         open={dialogOpen}
         mode={dialogMode}
-        task={editingTask}
+        task={dialogMode === "edit" ? editingTask : null}
         areas={areas}
+        taskTypes={taskTypes}
+        documents={documents}
         onClose={closeDialog}
-        recommendationFeedback={
-          dialogMode === "edit" ? editRecommendationFeedback : null
-        }
+        recommendationFeedback={dialogMode === "edit" ? editRecommendationFeedback : null}
+        sparringCreateContext={dialogMode === "create" ? sparPersist : null}
+        initialCreateAreaId={dialogMode === "create" ? createAreaPrefill : null}
       />
     </div>
   );

@@ -6,11 +6,11 @@
 
 Diese Datei beschreibt die geplante technische Verortung jeder V1-Funktion: Auf welcher Seite lebt sie, welche Serveraktionen / Queries sind vorgesehen, welche Tabellen werden dabei angefasst und welcher Workflow gilt.
 
-Die Implementation Map ist ein **Stub** – sie plant die Verortung, enthält aber keinen konkreten Code, keine Dateipfade und keine Komponentenbäume. Sie dient als Brücke zwischen fachlicher Doku (Produkt-Anforderung, Route-Map, Objektmodell, Datenmodell) und der späteren Umsetzung.
+Die Implementation Map plant die **Verortung** der Funktionen (Seiten, Aktionen, Tabellen, Abläufe). Sie enthält bewusst **keine** Code-Templates und keine Komponentenbäume. **Kurze Anker** zum Repository (z. B. eine Server-Action, ein Modulpfad) sind ergänzend erlaubt, wo sie die Nachverfolgbarkeit verbessern — ohne vollständige Dateiinventare oder Implementierungsdetails.
 
 **Leitfrage:** *Welche Funktion wird wo gebaut, was braucht sie serverseitig, und welche Tabellen und Abläufe greifen?*
 
-**Gehört nicht hierher:** Fachliche Anforderungen (→ Produkt-Anforderung.md), fachliche Seitenstruktur (→ Route-Map.md), Objektrollen und Beziehungen (→ Objektmodell.md), Tabellenstrukturen (→ Datenmodell.md), konkreter Code, Dateipfade, Komponentennamen.
+**Gehört nicht hierher:** Fachliche Anforderungen (→ Produkt-Anforderung.md), fachliche Seitenstruktur (→ Route-Map.md), Objektrollen und Beziehungen (→ Objektmodell.md), Tabellenstrukturen (→ Datenmodell.md), ausführlicher Anwendungscode, UI-/Komponenten-Vollkataloge.
 
 ---
 
@@ -23,7 +23,7 @@ Die Implementation Map ist ein **Stub** – sie plant die Verortung, enthält ab
 | **Seite** | Layout-Rahmen (auf jeder Seite sichtbar) |
 | **Queries** | Keine eigenen Daten-Queries – rein statische Navigation |
 | **Tabellen** | Keine |
-| **Workflow** | Statische Link-Liste: Dashboard, Bereiche, Sparring, Inbox, Tasks, Kalender, Personen. Aktiver Tab wird visuell hervorgehoben. |
+| **Workflow** | Statische Link-Liste (aktueller Stand in Gruppen): Dashboard; Lebensbereiche; Tasks + Kalender; Inbox; KI (Sparring); Kontakte; Notizen + Gedächtnis (Route `/ergebnisse`) — aktiver Tab wird visuell hervorgehoben. **Fachlich** gilt Input / Thinking / Planning (→ `Produkt-Anforderung.md`). **Keine** Mail-/Posteingang-Route. |
 
 ### 1.2 Globale Kopfzeile
 
@@ -39,18 +39,20 @@ Die Implementation Map ist ein **Stub** – sie plant die Verortung, enthält ab
 | Aspekt | Beschreibung |
 |---|---|
 | **Seite** | Kopfzeile (rechter Bereich), öffnet Overlay/Dropdown |
-| **Queries** | `searchGlobal(query)` – Volltextsuche über `tasks`, `results`, `notes`, `persons`, `sparring_chats`, `projects` |
-| **Tabellen** | `tasks`, `results`, `notes`, `persons`, `sparring_chats`, `projects` (nur Lese-Zugriff) |
-| **Workflow** | Eingabe → Debounced Query → Ergebnisliste mit Typ-Icon und Titel/Snippet → Klick navigiert zum Zielobjekt. **Notizen haben keinen Titel** – sie werden mit Content-Snippet (erste ~60 Zeichen) angezeigt. V1 bewusst schlank: Textsuche, kein Befehls- oder KI-Feld. |
+| **Queries** | Server Action `runGlobalSearch` — parallele `ilike`-Abfragen (je Quelle begrenzt, z. B. 8 Treffer), Zusammenführung im Arbeitsspeicher wo nötig (z. B. `results` aus Titel- und Inhaltssuche per `id`). |
+| **Tabellen** | Lesend: `tasks` (Titel), `areas` (Name), `inbox_items` (Inhalt), `calendar_events` (Titel), `notes` (Inhalt), `results` (Titel und Inhalt), `persons` (Vorname, Nachname, Kategorie), `sparring_chats` (Titel, nur Zeilen mit `deleted_at IS NULL`; optional Bereichsname über FK auf `areas`). **`projects`:** fachlich vorgesehen, Tabelle im Repo noch nicht angelegt → derzeit keine Suche. |
+| **Workflow** | Mindestlänge der Eingabe (z. B. 2 Zeichen) → debounced Aufruf → Trefferliste mit Typ-Kennzeichnung und Titel/Snippet → Klick springt je Typ zu: Task (`/tasks?task=…`), Bereich (`/tasks?area=…`), Inbox (`/inbox`), Kalender (`/kalender?m=…` aus Termindatum), Notiz (`/notizen?note=…`), Ergebnis (`/ergebnisse` mit Fragment `#<id>` zur Zeile), Person (`/personen?person=…` öffnet Bearbeiten-Dialog), Sparring (`/sparring/<id>`). **Notizen** ohne `title`: Anzeige per Content-Snippet (gekürzt). Sparring ohne Titel: Platzhalterlabel. Eingabe wird vor `ilike` von Metazeichen bereinigt. V1: reine Textsuche, kein Befehls- oder KI-Feld. |
+| **Anker (Repo)** | `app/(app)/search/actions.ts` (`runGlobalSearch`), `components/global-search.tsx` |
 
 ### 1.4 Globaler Plus-Button (Schnellanlage)
 
 | Aspekt | Beschreibung |
 |---|---|
 | **Seite** | Kopfzeile (rechter Bereich), öffnet kleines Menü |
-| **Aktionen** | `createTask(data)`, `createSparringChat(data)`, `createPerson(data)`, `createNote(data)`, `createResult(data)` |
-| **Tabellen** | `tasks`, `sparring_chats`, `persons`, `notes`, `results`, `task_tags`, `result_areas` |
-| **Workflow** | Klick auf Plus → Menü mit 5 Einträgen (Task anlegen, Sparring starten, Person anlegen, Notiz anlegen, Ergebnis anlegen) → Eintrag öffnet jeweils ein Dialog-/Sheet-Formular → Speichern schreibt Datensatz → Bestätigung/Navigation. |
+| **Aktionen** | Über Verlinkung: Task-, Sparring-, Person-, Notiz-, Ergebnis-Anlage; die eigentlichen Schreibaktionen laufen auf den Zielseiten (Server Actions), z. B. `createTask`, `createNote`, `createResult`, … |
+| **Tabellen** | Abhängig vom gewählten Eintrag: `tasks`, `sparring_chats`, `persons`, `notes`, `results`, `task_tags`, `result_areas`, … |
+| **Workflow** | Klick auf Plus → Menü mit **fünf** Einträgen: Task anlegen, Sparring starten, Person anlegen, Notiz anlegen, Ergebnis anlegen. Kein Mail-/Outlook-Eintrag. Die Einträge sind **Links** auf die jeweilige Route (teilweise mit `?new=1` o. ä.); Formular/Dialog öffnet die Zielseite bzw. -komponente. Kalender-Anlage erfolgt bewusst **nicht** über dieses Menü (siehe Route-Map). |
+| **Anker (Repo)** | `components/global-plus-menu.tsx` |
 
 ---
 
@@ -472,3 +474,7 @@ Einige Serveraktionen werden an mehreren Stellen wiederverwendet:
 | 2026-04-11 | Section 11: Schreibtabellen für Bereiche vervollständigt | Fehlten: `tasks`, `task_tags`, `sparring_chats`, `sparring_messages`, `results`, `result_areas`, `notes` (Anlage im Bereichs-/Projektkontext). |
 | 2026-04-11 | Section 7.4: Schreib-Aktionen und -Tabellen für Projekt-Detailseite ergänzt | Anlage von Tasks, Ergebnissen, Sparring, Notizen im Projektkontext war beschrieben, aber Schreib-Tabellen fehlten. |
 | 2026-04-11 | `createContextSparring` in Tabelle gemeinsamer Serveraktionen aufgenommen (Section 10.1) | Neue Aktion aus Section 5.5 muss in der Übersicht erscheinen. |
+| 2026-04-11 | Section 0: Stub-Definition gelockert; kurze Repo-Anker zulässig | Abgleich mit umgesetztem Next.js-Repo; weiterhin keine Komponenten-Vollkataloge. |
+| 2026-04-11 | Section 1.1: Navigationsliste an aktuelle Maintabs angepasst | Posteingang, Ergebnisse, Notizen ergänzt. |
+| 2026-04-11 | Section 1.3–1.4: globale Suche und Plus-Menü an Implementierung angepasst | `runGlobalSearch`, Tabellen inkl. `areas`/`inbox_items`/`calendar_events`, Navigation pro Treffertyp, sechs Plus-Einträge inkl. Posteingang. |
+| 2026-04-12 | Section 1.1 und 1.4: Posteingang/Mail entfernt; Nav ohne Mail-Tab; Plus-Menü fünf Einträge; Leitidee Input/Thinking/Planning | Kein Mailclient; Microsoft OAuth nur Kalender (`Calendars.ReadWrite`). |

@@ -1,24 +1,51 @@
 import { TasksClient } from "@/components/tasks/tasks-client";
+import { buttonClassName } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
+import { AlertBanner } from "@/components/ui/alert-banner";
+import {
+  fetchSparringTaskDraft,
+  fetchSparringTaskDraftFromMessage,
+  type SparringTaskDraft,
+} from "@/lib/sparring/task-draft";
 import { createClient } from "@/lib/supabase/server";
+import { fetchTaskTypesForUser } from "@/lib/task-types/fetch-task-types";
 import { fetchRecommendedTask } from "@/lib/tasks/fetch-recommended";
+import { PRODUCT_LABEL } from "@/lib/product-labels";
 import { fetchTasksPageData } from "@/lib/tasks/fetch-tasks";
 import Link from "next/link";
+import { Suspense } from "react";
 
-export default async function TasksPage() {
+type PageProps = {
+  searchParams: Promise<{
+    new?: string;
+    from_sparring?: string;
+    from_sparring_message?: string;
+    task?: string;
+    area?: string;
+  }>;
+};
+
+export default async function TasksPage({ searchParams }: PageProps) {
+  const sp = await searchParams;
   const supabase = await createClient();
   const { user, tasks, areas, loadError } = await fetchTasksPageData(supabase);
+  const taskTypesRes = user ? await fetchTaskTypesForUser(supabase, user.id) : { taskTypes: [], error: null };
+  const docsRes = await supabase
+    .from("documents")
+    .select("id,title")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  const documents =
+    docsRes.error || !docsRes.data
+      ? []
+      : docsRes.data.map((d) => ({ id: String(d.id), title: String(d.title ?? "") }));
 
   if (!user) {
     return (
-      <div className="space-y-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
-        <p className="text-zinc-600 dark:text-zinc-400">
-          Du bist noch nicht angemeldet.
-        </p>
-        <Link
-          href="/login"
-          className="inline-flex rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-        >
+      <div className="space-y-6">
+        <PageHeader title={PRODUCT_LABEL.tasks} />
+        <p className="text-sm text-leif-secondary">Du bist noch nicht angemeldet.</p>
+        <Link href="/login" className={buttonClassName("primary")}>
           Zur Anmeldung
         </Link>
       </div>
@@ -27,25 +54,46 @@ export default async function TasksPage() {
 
   if (loadError) {
     return (
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-200">
-          Daten konnten nicht geladen werden: {loadError}
-        </p>
+      <div className="space-y-6">
+        <PageHeader title={PRODUCT_LABEL.tasks} />
+        <AlertBanner variant="error">Daten konnten nicht geladen werden: {loadError}</AlertBanner>
       </div>
     );
+  }
+
+  let sparringTaskDraft: SparringTaskDraft | null = null;
+  const rawMsg = typeof sp.from_sparring_message === "string" ? sp.from_sparring_message.trim() : "";
+  const hasMsg = /^[0-9a-f-]{36}$/i.test(rawMsg);
+  if (hasMsg) {
+    const d = await fetchSparringTaskDraftFromMessage(supabase, user.id, rawMsg);
+    if (d.ok) sparringTaskDraft = d.draft;
+  } else if (sp.from_sparring) {
+    const d = await fetchSparringTaskDraft(supabase, user.id, sp.from_sparring);
+    if (d.ok) sparringTaskDraft = d.draft;
   }
 
   const reco = await fetchRecommendedTask(supabase, user.id, areas);
 
   return (
-    <TasksClient
-      tasks={tasks}
-      areas={areas}
-      recommended={
-        reco.task && reco.breakdown ? { task: reco.task, breakdown: reco.breakdown } : null
+    <Suspense
+      fallback={
+        <div className="space-y-4">
+          <PageHeader title={PRODUCT_LABEL.tasks} />
+          <p className="text-sm text-leif-muted">Lade…</p>
+        </div>
       }
-      recommendedError={reco.error}
-    />
+    >
+      <TasksClient
+        tasks={tasks}
+        areas={areas}
+        taskTypes={taskTypesRes.taskTypes}
+        documents={documents}
+        recommended={
+          reco.task && reco.breakdown ? { task: reco.task, breakdown: reco.breakdown } : null
+        }
+        recommendedError={reco.error}
+        sparringTaskDraft={sparringTaskDraft}
+      />
+    </Suspense>
   );
 }

@@ -1,312 +1,205 @@
 "use client";
 
-import {
-  createTaskFromInbox,
-  discardInboxItem,
-  markInboxItemRead,
-  type CreateTaskFromInboxInput,
-} from "@/app/(app)/inbox/actions";
+import { InboxPendingTableWithWorkflows } from "@/components/inbox/inbox-pending-table-workflows";
+import { PageHeader } from "@/components/ui/page-header";
+import { parseInboxAiSuggestion } from "@/lib/inbox/ai-suggestions";
 import type { InboxListItem } from "@/lib/inbox/types";
+import { PRODUCT_LABEL } from "@/lib/product-labels";
+import { createClient } from "@/lib/supabase/client";
+import type { TaskTypeRow } from "@/lib/task-types/defaults";
 import type { AreaRow } from "@/lib/tasks/types";
-import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState } from "react";
-
-function formatWhen(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("de-DE", {
-    dateStyle: "short",
-    timeStyle: "short",
-  });
-}
-
-function defaultTitleFromContent(content: string): string {
-  const line = content.split("\n")[0]?.trim() ?? "";
-  const base = line || content.trim();
-  return base.length > 200 ? `${base.slice(0, 197)}…` : base;
-}
-
-function metadataPreview(meta: Record<string, unknown>): string {
-  if (!meta || Object.keys(meta).length === 0) return "—";
-  try {
-    return JSON.stringify(meta);
-  } catch {
-    return "—";
-  }
-}
+import { useEffect, useMemo, useState } from "react";
 
 type Props = {
+  userId: string;
   pending: InboxListItem[];
   closed: InboxListItem[];
   areas: AreaRow[];
+  taskTypes: TaskTypeRow[];
   errors: { pending: string | null; closed: string | null };
 };
 
-export function InboxPageClient({ pending, closed, areas, errors }: Props) {
-  const router = useRouter();
-  const [showClosed, setShowClosed] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  const [taskDialogItem, setTaskDialogItem] = useState<InboxListItem | null>(null);
-  const taskDialogRef = useRef<HTMLDialogElement>(null);
-  const taskFormId = useId();
+export function InboxPageClient({ userId, pending, closed, areas, taskTypes, errors }: Props) {
+  const [clockMs, setClockMs] = useState<number>(() => Date.now());
+  const [pendingState, setPendingState] = useState<InboxListItem[]>(pending);
+  const [closedState, setClosedState] = useState<InboxListItem[]>(closed);
 
   useEffect(() => {
-    const el = taskDialogRef.current;
-    if (!el) return;
-    if (taskDialogItem) {
-      if (!el.open) el.showModal();
-    } else if (el.open) {
-      el.close();
-    }
-  }, [taskDialogItem]);
+    const id = window.setInterval(() => setClockMs(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
-  async function run(
-    id: string,
-    fn: (id: string) => Promise<{ ok: true } | { ok: false; error: string }>,
-  ) {
-    setActionError(null);
-    setBusyId(id);
-    try {
-      const res = await fn(id);
-      if (!res.ok) setActionError(res.error ?? "Fehler");
-      else router.refresh();
-    } finally {
-      setBusyId(null);
-    }
-  }
+  useEffect(() => {
+    setPendingState(pending);
+  }, [pending]);
 
-  async function submitTaskFromInbox(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!taskDialogItem) return;
-    const fd = new FormData(e.currentTarget);
-    const input: CreateTaskFromInboxInput = {
-      inbox_item_id: taskDialogItem.id,
-      title: String(fd.get("title") ?? ""),
-      area_id: String(fd.get("area_id") ?? ""),
+  useEffect(() => {
+    setClosedState(closed);
+  }, [closed]);
+
+  const upsertByUpdatedAtDesc = useMemo(
+    () => (list: InboxListItem[], item: InboxListItem) => {
+      const next = list.filter((x) => x.id !== item.id);
+      next.push(item);
+      next.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+      return next;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const supabase = createClient();
+    const normalize = (row: Record<string, unknown>): InboxListItem => {
+      const statusRaw = String(row.status ?? "pending");
+      const status: InboxListItem["status"] =
+        statusRaw === "pending" || statusRaw === "processed" || statusRaw === "discarded"
+          ? statusRaw
+          : "pending";
+      const metadata =
+        row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+          ? (row.metadata as Record<string, unknown>)
+          : {};
+      const aiStatusRaw = String(row.ai_status ?? "");
+      const aiStatus: InboxListItem["ai_status"] =
+        aiStatusRaw === "pending" || aiStatusRaw === "ready" || aiStatusRaw === "rejected" || aiStatusRaw === "failed"
+          ? aiStatusRaw
+          : undefined;
+      const aiSuggestion = parseInboxAiSuggestion(row.ai_suggestion) ?? parseInboxAiSuggestion(metadata.ai_suggestion_v1);
+      return {
+        id: String(row.id ?? ""),
+        content: String(row.content ?? ""),
+        source: String(row.source ?? ""),
+        source_ref: row.source_ref == null ? null : String(row.source_ref),
+        status,
+        processed_as: row.processed_as == null ? null : String(row.processed_as),
+        processed_ref_id: row.processed_ref_id == null ? null : String(row.processed_ref_id),
+        metadata,
+        ai_status: aiStatus,
+        ai_error: row.ai_error == null ? null : String(row.ai_error),
+        ai_suggestion: aiStatus === "rejected" ? null : aiSuggestion,
+        ai_suggestion_rejected:
+          aiStatus === "rejected" ||
+          (typeof metadata.ai_suggestion_rejected_at === "string" && metadata.ai_suggestion_rejected_at.trim().length > 0),
+        ai_suggestion_checked:
+          aiStatus === "ready" ||
+          aiStatus === "failed" ||
+          aiStatus === "rejected" ||
+          (typeof row.ai_checked_at === "string" && row.ai_checked_at.trim().length > 0),
+        created_at: String(row.created_at ?? ""),
+        updated_at: String(row.updated_at ?? ""),
+      };
     };
-    setActionError(null);
-    setBusyId(taskDialogItem.id);
-    try {
-      const res = await createTaskFromInbox(input);
-      if (!res.ok) {
-        setActionError(res.error);
-        return;
-      }
-      setTaskDialogItem(null);
-      router.refresh();
-    } finally {
-      setBusyId(null);
-    }
-  }
+
+    const channel = supabase
+      .channel(`inbox_items_live:${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "inbox_items",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const nextRow =
+            payload.eventType === "DELETE"
+              ? null
+              : normalize(payload.new as Record<string, unknown>);
+          const deletedId = String((payload.old as { id?: string } | null)?.id ?? "");
+
+          if (payload.eventType === "DELETE") {
+            if (!deletedId) return;
+            setPendingState((current) => current.filter((x) => x.id !== deletedId));
+            setClosedState((current) => current.filter((x) => x.id !== deletedId));
+            return;
+          }
+
+          if (!nextRow) return;
+          setPendingState((current) => {
+            const without = current.filter((x) => x.id !== nextRow.id);
+            return nextRow.status === "pending" ? upsertByUpdatedAtDesc(without, nextRow) : without;
+          });
+          setClosedState((current) => {
+            const without = current.filter((x) => x.id !== nextRow.id);
+            return nextRow.status === "processed" || nextRow.status === "discarded"
+              ? upsertByUpdatedAtDesc(without, nextRow)
+              : without;
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, upsertByUpdatedAtDesc]);
+
+  const now = clockMs;
+  const todayKey = new Date(clockMs).toDateString();
+  const todayProcessed = closedState.filter(
+    (item) => item.status === "processed" && new Date(item.updated_at).toDateString() === todayKey,
+  );
+  const todayIncoming = pendingState.filter((item) => new Date(item.created_at).toDateString() === todayKey).length;
+  const todayTotal = todayProcessed.length + todayIncoming;
+  const progressPct = todayTotal > 0 ? Math.max(0, Math.min(100, Math.round((todayProcessed.length / todayTotal) * 100))) : 0;
+  const oldestPendingTs = pendingState
+    .map((item) => new Date(item.created_at).getTime())
+    .filter((ts) => Number.isFinite(ts))
+    .sort((a, b) => a - b)[0];
+  const oldestCompact = (() => {
+    if (!oldestPendingTs) return "—";
+    const diffHours = Math.floor((now - oldestPendingTs) / (1000 * 60 * 60));
+    if (diffHours < 24) return `${Math.max(0, diffHours)}h`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d`;
+  })();
+  const createdTodayTask = closedState.filter(
+    (item) => item.processed_as === "task" && new Date(item.updated_at).toDateString() === todayKey,
+  ).length;
+
+  const processedAll = closedState
+    .filter((item) => item.status === "processed")
+    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  const recentCompleted = processedAll.slice(0, 10);
+  const completedTotalCount = processedAll.length;
+  const discarded = closedState.filter((item) => item.status === "discarded");
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
-
-      {actionError ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-200">
-          {actionError}
-        </p>
-      ) : null}
-
-      <section className="space-y-3" aria-labelledby="inbox-pending-heading">
-        <h2 id="inbox-pending-heading" className="text-lg font-semibold tracking-tight">
-          Offene Eingänge
-        </h2>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Alle Einträge mit Status „pending“ – unabhängig vom Gelesen-Status (Implementation-Map §3.1).
-        </p>
-
-        {errors.pending ? (
-          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-200">
-            {errors.pending}
-          </p>
-        ) : null}
-
-        {!errors.pending && pending.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-4 py-6 text-sm text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/40 dark:text-zinc-400">
-            Keine offenen Inbox-Einträge.
-          </p>
-        ) : null}
-
-        {!errors.pending && pending.length > 0 ? (
-          <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-            {pending.map((item) => (
-              <li key={item.id} className="space-y-3 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <p className="whitespace-pre-wrap text-sm text-zinc-900 dark:text-zinc-100">
-                      {item.content}
-                    </p>
-                    <div className="flex flex-wrap gap-2 text-xs text-zinc-500">
-                      <span>Quelle: {item.source}</span>
-                      {item.source_ref ? <span>· {item.source_ref}</span> : null}
-                      <span>· {formatWhen(item.created_at)}</span>
-                      <span
-                        className={
-                          item.is_read
-                            ? "rounded bg-zinc-200 px-1.5 py-0.5 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-                            : "rounded bg-amber-100 px-1.5 py-0.5 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200"
-                        }
-                      >
-                        {item.is_read ? "Gelesen" : "Ungelesen"}
-                      </span>
-                    </div>
-                    <details className="text-xs">
-                      <summary className="cursor-pointer text-zinc-600 dark:text-zinc-400">
-                        Metadaten
-                      </summary>
-                      <pre className="mt-1 max-h-32 overflow-auto rounded bg-zinc-100 p-2 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                        {metadataPreview(item.metadata)}
-                      </pre>
-                    </details>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={busyId === item.id || item.is_read}
-                    onClick={() => run(item.id, (id) => markInboxItemRead(id))}
-                    className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-900"
-                  >
-                    {busyId === item.id ? "…" : "Als gelesen markieren"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busyId === item.id || areas.length === 0}
-                    onClick={() => setTaskDialogItem(item)}
-                    className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-                  >
-                    Als Task anlegen
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busyId === item.id}
-                    onClick={() => run(item.id, (id) => discardInboxItem(id))}
-                    className="rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-800 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/30"
-                  >
-                    Verwerfen
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </section>
-
-      <section className="space-y-3" aria-labelledby="inbox-closed-heading">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="inbox-closed-heading" className="text-lg font-semibold tracking-tight">
-            Verarbeitet & verworfen
-          </h2>
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-            <input
-              type="checkbox"
-              checked={showClosed}
-              onChange={(e) => setShowClosed(e.target.checked)}
-              className="rounded border-zinc-400"
-            />
-            Anzeigen
-          </label>
-        </div>
-
-        {errors.closed ? (
-          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-200">
-            {errors.closed}
-          </p>
-        ) : null}
-
-        {showClosed && !errors.closed && closed.length === 0 ? (
-          <p className="text-sm text-zinc-500">Keine verarbeiteten oder verworfenen Einträge.</p>
-        ) : null}
-
-        {showClosed && !errors.closed && closed.length > 0 ? (
-          <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-            {closed.map((item) => (
-              <li key={item.id} className="p-4">
-                <p className="whitespace-pre-wrap text-sm text-zinc-800 dark:text-zinc-200">
-                  {item.content}
-                </p>
-                <p className="mt-2 text-xs text-zinc-500">
-                  {item.status === "discarded" ? "Verworfen" : "Verarbeitet"}
-                  {item.processed_as ? ` · ${item.processed_as}` : ""}
-                  {item.processed_ref_id ? ` · Ref: ${item.processed_ref_id.slice(0, 8)}…` : ""}
-                  <span className="mx-1">·</span>
-                  {formatWhen(item.updated_at)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </section>
-
-      <dialog
-        ref={taskDialogRef}
-        className="w-[min(100vw-2rem,28rem)] rounded-lg border border-zinc-200 bg-background p-0 text-foreground shadow-xl dark:border-zinc-800 [&::backdrop]:bg-zinc-950/50"
-        onClose={() => setTaskDialogItem(null)}
-      >
-        {taskDialogItem ? (
-          <div className="flex flex-col">
-            <header className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-              <h3 className="text-base font-semibold">Task aus Inbox</h3>
-              <p className="mt-1 text-xs text-zinc-500">
-                Der Task startet mit Status „Inbox“; der Eingang wird als verarbeitet markiert.
-              </p>
-            </header>
-            <form
-              id={taskFormId}
-              key={taskDialogItem.id}
-              onSubmit={submitTaskFromInbox}
-              className="space-y-3 p-4"
-            >
-              <label className="block text-sm font-medium">
-                Titel
-                <input
-                  name="title"
-                  type="text"
-                  required
-                  defaultValue={defaultTitleFromContent(taskDialogItem.content)}
-                  className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                />
-              </label>
-              <label className="block text-sm font-medium">
-                Bereich
-                <select
-                  name="area_id"
-                  required
-                  defaultValue={areas[0]?.id ?? ""}
-                  className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                >
-                  {areas.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </form>
-            <footer className="flex justify-end gap-2 border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
-              <button
-                type="button"
-                className="rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
-                onClick={() => setTaskDialogItem(null)}
-              >
-                Abbrechen
-              </button>
-              <button
-                type="submit"
-                form={taskFormId}
-                disabled={busyId === taskDialogItem.id || areas.length === 0}
-                className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-              >
-                {busyId === taskDialogItem.id ? "Speichern…" : "Anlegen"}
-              </button>
-            </footer>
+      <div className="space-y-2.5">
+        <PageHeader title={PRODUCT_LABEL.inbox} />
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-3 text-[12px] text-leif-muted">
+            <p className="font-medium text-leif-text">Heute erledigt</p>
+            <p className="tabular-nums font-medium text-leif-text">
+              {todayProcessed.length} / {todayTotal}
+            </p>
           </div>
-        ) : null}
-      </dialog>
+          <div className="h-[6px] overflow-hidden rounded-full bg-[#e5e7eb]">
+            <div
+              className="h-full rounded-full transition-[width] duration-300 ease-out"
+              style={{ width: `${progressPct}%`, backgroundColor: "#456990" }}
+            />
+          </div>
+          <p className="text-[13px] font-medium leading-snug tracking-tight text-[#374151]">
+            {pendingState.length} offen · ältestes: {oldestCompact}
+          </p>
+          <p className="text-[11px] leading-relaxed text-[#9ca3af]">
+            Heute erstellt: {createdTodayTask} Tasks
+          </p>
+        </div>
+      </div>
+
+      <InboxPendingTableWithWorkflows
+        pending={pendingState}
+        areas={areas}
+        taskTypes={taskTypes}
+        loadError={errors.pending}
+        recentCompleted={recentCompleted}
+        completedTotalCount={completedTotalCount}
+        discarded={discarded}
+        closedLoadError={errors.closed}
+      />
     </div>
   );
 }

@@ -1,26 +1,77 @@
 @import "tailwindcss";
 
+/* Leif OS design tokens — hell, ruhig, desktop-first */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --leif-canvas: #fafafa;
+  --leif-surface: #ffffff;
+  --leif-surface-soft: #f3f5f8;
+  --leif-border: #e5e7eb;
+  --leif-divider: #f1f5f9;
+  --leif-text: #111111;
+  --leif-secondary: #6b7280;
+  --leif-muted: #9ca3af;
+  --leif-primary: #456990;
+  --leif-primary-hover: #38587a;
+  --leif-primary-soft: #edf2f8;
+  --leif-success: #16a34a;
+  --leif-warning: #f59e0b;
+  --leif-error: #dc2626;
+  --leif-info: #2563eb;
+  --leif-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --background: var(--leif-canvas);
+  --foreground: var(--leif-text);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+
+  --color-leif-canvas: var(--leif-canvas);
+  --color-leif-surface: var(--leif-surface);
+  --color-leif-surface-soft: var(--leif-surface-soft);
+  --color-leif-border: var(--leif-border);
+  --color-leif-divider: var(--leif-divider);
+  --color-leif-text: var(--leif-text);
+  --color-leif-secondary: var(--leif-secondary);
+  --color-leif-muted: var(--leif-muted);
+  --color-leif-primary: var(--leif-primary);
+  --color-leif-primary-hover: var(--leif-primary-hover);
+  --color-leif-primary-soft: var(--leif-primary-soft);
+  --color-leif-success: var(--leif-success);
+  --color-leif-warning: var(--leif-warning);
+  --color-leif-error: var(--leif-error);
+  --color-leif-info: var(--leif-info);
+
+  --shadow-leif: var(--leif-shadow);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: light;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--leif-canvas);
+  color: var(--leif-text);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Native <dialog open>: Preflight nullt oft margin — ohne diese Regel landen Modals oben links. */
+dialog[open] {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  max-width: calc(100vw - 2rem);
+  max-height: min(90vh, calc(100dvh - 2rem));
+}
+
+::selection {
+  background: color-mix(in srgb, var(--leif-primary) 18%, transparent);
 }

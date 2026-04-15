@@ -2,208 +2,179 @@
 
 ## 0. Zweck dieses Dokuments
 
-Diese Datei beschreibt die **fachlichen Anforderungen** für den Parallel-Neustart von Leif OS – vor konkreter Technik, Pfaden, Ordnern oder UI-Komponenten.  
-Sie ist die Grundlage für:
+Diese Datei beschreibt die **fachlichen Anforderungen** für Leif OS – vor konkreter Technik, Dateipfaden, Ordnern oder UI-Komponenten.  
+Sie ist die Grundlage für technische Doku (Route Map, Implementation Map, Datenmodell, Änderungsprotokoll), Repo-Struktur und Roadmap.
 
-- die technische Doku (Route Map, Implementation Map, Datenmodell-Doku, Änderungsprotokoll),
-- die neue Projekt-/Repo-Struktur,
-- die Roadmap des Neustarts. 
-
-Technikentscheidungen (Next.js, Supabase, n8n etc.) bleiben gültig, sind hier aber bewusst **nicht** der Fokus. 
+Technikentscheidungen (Next.js, Supabase, Anbindungen) bleiben gültig, sind hier aber bewusst **nicht** der Fokus.
 
 ---
 
-## 1. Zielbild Leif OS (Endfassung fachlich)
+## 1. Zielbild Leif OS (fachlich)
 
 ### 1.1 Rolle von Leif OS
 
-1. Leif OS ist ein zentrales persönliches Arbeits-, Planungs- und Assistenzsystem mit eigenem UI; kein Bot-only-System, keine lose Tool-Sammlung.   
-2. Das System bündelt Informationen, Aufgaben, Termine, Kommunikation, bereichsbezogene Kontexte und KI-gestütztes Sparring in einem zusammenhängenden, strukturierten System.   
-3. V1 bleibt bewusst klein, robust und testbar. Das Zielbild beschreibt den Endrahmen, nicht den sofortigen Build-Umfang. 
+1. Leif OS ist ein **persönliches Strategie-, Planungs- und Entscheidungs-OS** mit eigenem UI: kein Bot-only-System, keine lose Tool-Sammlung.
 
-### 1.2 Hauptaufgaben von Leif OS
+2. Der Schwerpunkt liegt auf **Überblick, Priorisierung, Planung, Kapazitätssteuerung, strategischem Denken** und auf der **Verknüpfung von Themen, Bereichen und Erkenntnissen** – sowie auf der **Übersetzung von Input in konkrete Entscheidungen und Planung**.
+
+3. Leif OS ist **ausdrücklich kein** operatives All-in-one-System, **kein** Dateimanager, **kein** Mailclient und **kein** Ort für die vollständige operative Abarbeitung externer Kommunikation. Externe Kanäle (z. B. E-Mail-Clients, Bank-Portale) bleiben die Orte der Ausführung; Leif OS ist der Ort für **Einordnen, Bewerten, Planen, Entscheiden und Verknüpfen**.
+
+4. V1 bleibt bewusst klein, robust und testbar. Das Zielbild beschreibt den Endrahmen, nicht den sofortigen Build-Umfang.
+
+### 1.2 Was Leif OS ausdrücklich nicht ist
+
+- **Kein** universelles Ticketsystem und **kein** Ersatz für Fachanwendungen (Buchhaltung, CRM, klassische Projektmanagement-Suites).
+- **Kein** Archiv für unbegrenzte Rohkommunikation; Chatverläufe und Postfächer sind nicht die Wahrheit des Systems.
+- **Kein** starres Ordnersystem: Inhalte werden als **Objekte mit Verknüpfungen** (u. a. zu Lebensbereichen und Unterthemen) gedacht, nicht als verschachtelte Dateibäume.
+
+### 1.3 Leitlogik: drei Systemebenen
+
+Die App soll entlang von **drei Ebenen** verstanden und strukturiert werden. Sie hängen zusammen, dürfen aber **nicht vermischt** werden:
+
+| Ebene | Name (fachlich) | Funktion | Beispiele im Produkt |
+|---|---|---|---|
+| **A** | **Input** | Alles, was neu ins System kommt und noch Klärung braucht | Inbox, Schnellerfassung, bewusst weitergeleitete Information aus E-Mail-Kanälen |
+| **B** | **Thinking** | Nachdenken, Einordnen, Reflektieren, Entscheiden, Verknüpfen | KI (Sparring), Lebensbereiche, Gedächtnis, Notizen, strategische Themen, Sparring-Ausgänge |
+| **C** | **Planning** | Konkrete zeitliche und kapazitative Verortung | Tasks, Kalender, Tages- und Wochenplanung, nächster sinnvoller Schritt |
+
+**Leitplanken:** Nicht alles ist ein Task. Nicht alles gehört in den Kalender. Nicht alles aus der Inbox wird direkt geplant. Strategie (Thinking) und operative Planung (Planning) gehören zusammen, bleiben aber fachlich unterscheidbar.
+
+### 1.4 Hauptaufgaben von Leif OS
 
 Leif OS soll:
 
-1. Eingänge aus verschiedenen Quellen (Telegram, Kalender, später To Do, E-Mail etc.) aufnehmen, strukturieren, bewerten und in Folgeobjekte überführen (Tasks, Ergebnisse, Termine, Entwürfe etc.). 
+1. **Input fassen und klären:** Eingänge aus definierten Quellen aufnehmen, sichten, bewerten und – nach Review – in passende Zielobjekte überführen oder verwerfen bzw. zurückstellen (siehe Inbox, Abschnitt 5 und 6).
 
-2. Tagessteuerung ermöglichen: Aufgaben, Termine und Kapazität so verbinden, dass nicht nur der „nächste sinnvolle Schritt“ sichtbar wird, sondern die Priorisierung operativ spürbar abgenommen wird.  
-   Ein zentraler Nutzen des Systems besteht darin, aus allen offenen Aufgaben die aktuell **empfohlene nächste Aufgabe** sichtbar zu machen. 
+2. **Denken und Entscheiden unterstützen:** KI-gestütztes Sparring als **Denkpartner** (nicht als bloßes Chatfenster), gebündelt mit Lebensbereichen, Gedächtnis (strukturierte Ergebnisse) und Notizen.
 
-3. Arbeit sowohl über **globale Funktionsseiten** als auch über **fachliche Bereiche** organisieren, wobei Bereiche echte Kontexträume sind – keine reinen Tags oder Filter. 
+3. **Planen und steuern:** Tages- und Wochensteuerung, Aufgaben, Termine und Kapazität so verbinden, dass der **nächste sinnvolle Schritt** sichtbar wird – insbesondere durch eine **empfohlene nächste Aufgabe**.
 
-4. Sparring als zentralen Arbeitsmodus bereitstellen, der Analyse, Klärung, Entscheidungsfindung, Schreiben und Ableitung von Folgeaktionen unterstützt. 
+4. **Kontext halten:** Arbeit über **globale Funktionsseiten** und über **Lebensbereiche** organisieren. Lebensbereiche sind **strategische Kontexte** und Orientierungsebenen – keine Projektordner und keine Dateicontainer (siehe Abschnitt 3).
 
-5. Dauerhafte Ergebnisse (Erkenntnisse, Entscheidungen) strukturiert speichern und später als Grundlage für Memory und Priorisierung nutzen. 
+5. **Langzeitwissen aufbauen:** Dauerhaft relevante Erkenntnisse und Entscheidungen strukturiert im **Gedächtnis** halten; dieses Wissen bewusst aus Inbox, KI, Notizen oder Bereichsarbeit speisen – nicht durch blindes Einspeisen von Roh-Chats.
 
-6. Einen kompakten finanziellen Tagesüberblick ermöglichen, insbesondere über Gesamtvermögen und einfache Portfolio-Sichten. Historische Wertentwicklung und Performance-Logiken sind ein späterer Ausbauschritt. 
+6. **Lage zeigen:** Dashboard als **Steuerzentrale** für die Frage: *Was ist heute und diese Woche wirklich relevant?* – inklusive kompakter Kennzahlen (z. B. Vermögen/Portfolio), ohne zum Finanzcockpit zu werden.
 
-7. Kalender und Aufgaben so zusammenführen, dass zeitlich geplante Tasks im Kalender sichtbar werden und einfache Terminsetzung in den relevanten Kalenderkontexten möglich ist.  
-   Die sinnvolle Nutzung von Tages- und Wochenkapazität ist dabei ein zentraler fachlicher Anwendungsfall. 
+7. **Kalender und Aufgaben verbinden:** Geplante Tasks im Zeitkontext, Termine aus angebundenen Kalendern; Kapazität als einfacher Orientierungswert.
 
-### 1.3 Memory- und KI-Philosophie
+### 1.5 Memory- und KI-Philosophie
 
-1. Memory wird **nicht** blind aus kompletten Chats gespeist, sondern gezielt aus strukturierten Ergebnissen wie Erkenntnissen, Entscheidungen, verdichteten Notizen oder bestätigten Zusammenfassungen.   
-2. KI-Unterstützung (Sparring, Priorisierung, Entwürfe) soll **strukturierte Assistenz** liefern, keine ungefilterten Freitext-„Blobs“.   
-3. Spätere KI-Funktionen (Priorisierung, Fokus-Ansicht, KI-Sparring an Kontextpunkten) bauen auf klaren, fachlich modellierten Objekten und Ergebnissen auf. 
+1. Das **Gedächtnis** wird nicht aus vollständigen Chats gespeist, sondern aus **strukturierten, bestätigten Inhalten** (Erkenntnisse, Entscheidungen, ggf. kuratierte Übernahmen).
 
-### 1.4 V1-Fokus und Scope
+2. **KI** liefert **strukturierte Assistenz** für Reflexion, Priorisierung, Entscheidungsvorbereitung und nächste Schritte – mit klarer Überführung in Tasks, Notizen, Gedächtnis oder Lebensbereichskontext.
 
-1. V1 konzentriert sich auf einen alltagstauglichen, schlanken Kern aus **Dashboard, Inbox, Tasks, Sparring, Kalender** sowie einfachen **Bereichs- und Personenfunktionen**. 
+3. Spätere KI-Funktionen bauen auf klar modellierten Objekten und Ergebnissen auf.
 
-2. Bereiche und Personen sollen in V1 bereits fachlich sauber angelegt sein, aber noch nicht den Vollausbau des Endbilds erhalten. 
+### 1.6 V1-Fokus und Scope
 
-3. Der finanzielle Überblick im Dashboard ist fachlich wichtig, soll in V1 jedoch bewusst schlank bleiben: Gesamtvermögen und einfache Aggregationen stehen vor historischer Entwicklung, Performance-Logik und tiefer Analyse. 
+1. V1 konzentriert sich auf einen alltagstauglichen Kern aus **Dashboard, Inbox, Tasks, KI (Sparring), Kalender** sowie **Lebensbereichen, Kontakten, Notizen und Gedächtnis** (Ergebnisse).
 
-4. Die Priorisierungsunterstützung gehört bereits in V1 zum Kernnutzen des Systems.  
-   Insbesondere soll Leif OS eine **empfohlene nächste Aufgabe** sichtbar machen, statt die tägliche Priorisierungsarbeit vollständig dem Nutzer zu überlassen. 
+2. Lebensbereiche und Kontakte sind in V1 fachlich sauber angelegt; der volle Ausbau von Unterthemen-Verknüpfungen und Querschnittsfiltern kann schrittweise folgen.
 
-5. Der Kalender gehört in V1 nicht nur als Anzeige, sondern bereits als einfacher operativer Planungskontext zum Kern.  
-   Dazu zählen mindestens Tagesansicht, einfache Wochenansicht, Sicht auf Vergangenheit/Gegenwart/Zukunft, Sichtbarkeit geplanter Tasks im Kalender sowie einfache Termin-Erstellung im Outlook-Kalender. 
+3. Der finanzielle Überblick im Dashboard bleibt in V1 schlank (Aggregat, einfache Portfolio-Sichten).
 
-6. Einstellungen gehören weiterhin zum Zielbild, sind aber **kein priorisierter V1-Baustein** des Neustarts. 
+4. **Empfohlene nächste Aufgabe** und nutzbarer Kalender gehören zum V1-Kern.
+
+5. **E-Mail:** keine vollwertige Mail-Inbox im Produktkern; höchstens **Input-Kanal** und technische Anbindung für **Entwürfe** (siehe Abschnitt 2.3 und Route Map).
+
+6. **Einstellungen** sind im Zielbild vorgesehen, aber kein priorisierter V1-Schwerpunkt.
 
 ---
 
-## 2. Globale Maintabs (Endbild Navigation)
+## 2. Globale Maintabs und Randkanäle
 
-### 2.1 Verbindliche Maintabs
+### 2.1 Kernbereiche (verbindlich im Zielbild)
 
-Folgende Maintabs sind im Zielbild gesetzt:
+Die folgenden Bereiche bilden den **Produktkern**:
 
-1. **Dashboard**  
-   Zentrale Start- und Steuerungsseite für Tageslage, Priorisierung, relevante Eingänge, Termine, Kapazität und die aktuell empfohlene nächste Aufgabe.  
-   Zusätzlich ist das Dashboard ein zentraler Ort für einen kompakten finanziellen Überblick, insbesondere Gesamtvermögen und einfache Portfolio-Sichten. 
+1. **Dashboard** – Steuerzentrale für Relevanz heute/diese Woche (siehe Abschnitt 6.2).
 
-2. **Bereiche**  
-   Einstieg in die fachlichen Kontexträume (Hausverwaltung, Finanzen, Familie etc.). Von hier aus gelangt man in die Bereichsseiten. 
+2. **Inbox** – **Capture- und Review-Ort** für neuen, ungeklärten Input (siehe Abschnitt 5 und 6).
 
-3. **Sparring**  
-   Zentraler Ort für freies und übergreifendes Sparring, Übersicht über Sparring-Kontexte und Einstieg in Chats ohne direkten Objekt- oder Bereichskontext. 
+3. **KI** (Sparring) – Denkpartner für Klärung, Entscheidungsvorbereitung und Ableitung von Folgeschritten.
 
-4. **Inbox**  
-   Zentrale Fläche für neue ungeklärte Eingänge aus Telegram und später Kalender, To Do, E-Mail etc. Hier passiert Klärung, Zuordnung und Umwandlung in Tasks, Sparring, Ergebnisse, Entwürfe oder Verwerfen. 
+4. **Tasks** – globale Aufgabenführung und Planungsobjekte.
 
-5. **Tasks**  
-   Globale Arbeitsfläche für Aufgaben, Priorisierung, Statusführung, Bearbeitung, Planung, Sortierung und Filterung. 
+5. **Kalender** – zeitliche Verortung, Termine, Kapazitätssicht.
 
-6. **Kalender**  
-   Operative Kalender- und Planungssicht für Termine, geplante Tasks, Zeitkontext und Kapazitätssteuerung.  
-   Der Kalender verbindet Outlook-/Graph-Daten mit der eigenen Tages- und Wochenplanung in Leif OS. 
+6. **Lebensbereiche** – strategische Kontexte; Einstieg in Bereichsseiten.
 
-7. **Personen**  
-   Globale Sicht auf relevante Personen und ihre Stammdaten sowie ihre späteren Bezüge zu Bereichen, Aufgaben, Terminen, Dateien und Kommunikation.  
-   Im V1-Fokus steht zunächst eine einfache, alltagstaugliche Personenverwaltung inklusive Geburtstags- und Erinnerungslogik. 
+7. **Gedächtnis** (fachlich: strukturierte Ergebnisse) – Langzeitwissen des Systems.
 
-8. **Einstellungen**  
-   Einstellungen sind im Zielbild grundsätzlich vorgesehen, gehören aber nicht zum aktiven V1-Fokus und müssen im Neustart nicht als eigener priorisierter Maintab umgesetzt werden. 
+8. **Notizen** – kurzlebige Merker und Entwürfe.
 
-### 2.2 Globale Funktionen ohne eigenen Maintab (vorerst)
+9. **Kontakte** – Personenbezüge und Stammdaten.
 
-- **Kapazität**:  
-  Fachlich zentrale Logik (Bruttozeit minus belegte Zeit, Einordnung freier Zeitfenster, Ampel, Netto-Verfügbarkeit), aber primär als Dashboard- und Kalender-/Tasks-Perspektive statt eigener Haupttab. 
+### 2.2 Weitere globale Funktionen
+
+- **Kapazität:** zentrale Logik fachlich wichtig, in V1 primär als Dashboard- und Kalender-/Tasks-Perspektive, nicht zwingend als eigener Haupttab.
+
+### 2.3 E-Mail (Zielbild, ohne Mail-UI)
+
+- **Leif OS ist kein Mailclient.** Es gibt **keine** Postfach-Ansicht, **keine** Outlook-Inbox-Liste und **keine** Funktion zum Anlegen von E-Mail-Entwürfen in Outlook aus der App.
+
+- **Microsoft / Outlook** im Produkt dient **ausschließlich dem Kalender** (OAuth-Scope nur `Calendars.ReadWrite`), z. B. Sync, Termine schreiben, Geburtstags-Serien — nicht der Mail-API.
+
+- **E-Mail als Input** für die fachliche **Inbox** (z. B. Weiterleitung, strukturierte Nutzlast in `inbox_items.metadata`) ist ein **separater** Integrations-Schritt und derzeit **nicht** als Endnutzer-Flow umgesetzt.
 
 ---
 
-## 3. Bereiche
+## 3. Lebensbereiche und Unterthemen
 
-### 3.1 Bereichsdefinition
+### 3.1 Lebensbereich (fachlich)
 
-Ein Bereich ist ein **dauerhafter Kontextraum** einer klaren Lebens- oder Arbeitsdomäne. Er bündelt Aufgaben, Projekte, Ergebnisse, Personen, Dateien, Termine, Sparring und Querverweise, die zu dieser Domäne gehören. 
+Ein **Lebensbereich** ist ein **strategischer Kontext** einer Lebens- oder Arbeitsdomäne: Orientierungsebene, Filter, Denkraum – **kein** Projektordner, **kein** Dateicontainer und **kein** starres Archiv.
 
-Bereiche sind:
+Lebensbereiche bündeln **Sicht** auf verknüpfte Objekte (Tasks, Termine, Notizen, Gedächtniseinträge, KI-Sparrings, Kontakte, Dateien …), die **global** existieren und im Bereich nur **kontextuell** sichtbar gemacht werden.
 
-- keine Projektordner,
-- keine Sammelcontainer für „alles Mögliche“,
-- keine isolierten Sandboxes – sie bleiben mit dem Gesamtsystem verbunden. 
+### 3.2 Festgelegte vs. freie Lebensbereiche
 
-### 3.2 Festgelegte Hauptbereiche
+Im **Zielbild** können Lebensbereiche anwendungsseitig an die Nutzerrealität angepasst werden (Benennung, Reihenfolge), solange die fachliche Rolle „strategischer Kontext“ gewahrt bleibt. Referenzbeispiele aus dem bisherigen Modell: Hausverwaltung, Finanzen Firma, Finanzen Privat, Familie/Privat, Gesundheit/Sport – ohne Zwang zur exakten Namensliste, sofern das Datenmodell Anpassungen erlaubt.
 
-Im Zielbild existieren diese Hauptbereiche:
+Der frühere Gedanke eines eigenen Bereichs „Lebensplanung“ bleibt verworfen (Gefahr des Auffangbeckens). Langfristige oder strategische Themen werden über **Unterthemen**, Gedächtnis, KI und Querverweise getragen.
 
-1. **Hausverwaltung** – operativ, kaufmännisch, organisatorisch.   
-2. **Finanzen Firma** – betriebliche Finanzthemen, Liquidität, Verpflichtungen, Planung, Auswertungen sowie betrieblicher Vermögens- und Portfolioüberblick.   
-3. **Finanzen Privat** – private Finanzen, Verpflichtungen, Vermögen, Routinen, persönlicher finanzieller Überblick sowie privater Portfolioüberblick.   
-4. **Familie / Privat** – private Organisation, familiäre Themen, Alltagskoordination, nicht-finanzielle Privatkontexte.   
-5. **Gesundheit / Sport** – körperliche Gesundheit, medizinische Themen, Training, Routinen, Termine. 
+### 3.3 Unterthemen innerhalb eines Lebensbereichs
 
-Der tägliche Blick auf Vermögen und Portfolio ist fachlich ein wichtiger Anwendungsfall, der insbesondere in den Bereichen **Finanzen Firma** und **Finanzen Privat** verankert ist und zusätzlich in verdichteter Form auf dem Dashboard sichtbar werden soll. Historische Wertentwicklung und Performance-Auswertungen sind ein späterer Ausbauschritt. 
+Innerhalb eines Lebensbereichs gibt es **Unterthemen** – **Kategorien / Themencluster**, keine verschachtelte Ordnerlogik.
 
-Der früher gedachte Bereich „Lebensplanung“ wurde verworfen, da zu schwammig und mit hohem Risiko, zum Auffangbecken zu werden. Langfristige oder strategische Themen sollen über Projekte/Themencontainer, Ergebnisse und bereichsübergreifende Ansichten getragen werden, nicht über einen eigenen „Lebensplanung“-Bereich. 
+- Fachliche Formulierung: *Objekt X gehört zu Lebensbereich Y und zu Unterthema Z.*
 
-### 3.3 Bereichslogik
+- Im **bestehenden Datenmodell** entspricht diese Rolle primär der Entität **Projekt / Themencontainer** (`projects`): ein **Unterthema** ist kein Ordner, sondern eine **zusätzliche Strukturdimension** für Verknüpfungen.
 
-- Jeder Bereich hat eine eigene **Bereichsseite** mit:  
-  - Überblick,  
-  - Projekten/Themencontainern,  
-  - bereichsspezifischen Tasks,  
-  - Ergebnissen (Erkenntnisse/Entscheidungen),  
-  - Sparring-Historie,  
-  - relevanten Personen/Dateien,  
-  - Querverbindungen zu anderen Bereichen.   
-- Bereiche können Querverknüpfungen haben (z.B. Finanzentscheidung Hausverwaltung ↔ Finanzen Firma).   
-- Globale Objekte (Tasks, Personen, Dateien, Ergebnisse) können einem oder mehreren Bereichen zugeordnet sein. 
+### 3.4 Bereichsseite (fachlich)
+
+Jeder Lebensbereich hat eine **Bereichsseite**. Sie zeigt **keine Baumnavigation wie ein Dateisystem**, sondern einen **Querschnitt** durch verknüpfte Objekte – optional gefiltert oder gruppiert nach Unterthema.
+
+Mindestinhalt (Zielbild, an V1 anpassbar):
+
+- Überblick (offene Punkte, Kennzahlen),
+- Unterthemen (Themencontainer),
+- Tasks, Gedächtnis-Einträge, KI-Sparrings, Notizen, relevante Kontakte, Termine, Dateien,
+- Querverbindungen zu anderen Bereichen (z. B. über mehrsprachig verknüpfte Ergebnisse).
 
 ---
 
-## 4. Sparring
+## 4. KI (Sparring)
 
-### 4.1 Rolle von Sparring
+### 4.1 Rolle
 
-Sparring ist ein **zentraler Arbeitsmodus** von Leif OS und gleichzeitig:
-
-- Funktion (Arbeitsmodus),
-- Maintab (globaler Ort),
-- Datentyp (Sparring-Chat plus strukturierte Ergebnisse). 
-
-Sparring dient:
-
-- Analyse und Klärung,
-- Entscheidungsfindung,
-- Strukturierung,
-- Schreibarbeit (Texte, Mails, Konzepte),
-- Ableitung von Tasks, Ergebnissen, Entwürfen. 
+Die **KI** ist kein generisches Chatfenster, sondern ein Arbeitsmodus für **Sparring, Reflexion, Entscheidungsfindung, Priorisierung, Planerstellung** und für die **Überführung von Erkenntnissen** in Tasks, Notizen, Gedächtnis und Lebensbereiche.
 
 ### 4.2 Typen von Sparring
 
-1. **Freies Sparring**  
-   - Start aus dem Sparring-Maintab ohne festen Kontext.  
-   - Geeignet für offene Fragen, generelle Klärungen, Brainstorming, Textarbeit. 
-
-2. **Kontext-Sparring**  
-   - Start aus einem bestehenden Objekt (Task, Inbox-Item, Kalendertermin, Bereich etc.).  
-   - Kontext wird mitgegeben (z.B. Task-Titel, Termin, Bereich), um das Gespräch fokussiert zu halten. 
-
-3. **Projekt-/Themen-Sparring**  
-   - Eingebettet in einen Projekt/Themencontainer innerhalb eines Bereichs.  
-   - Mehrere Sparring-Chats können zu demselben Vorhaben/Case existieren. 
+1. **Freies Sparring** – ohne festen Objektkontext.  
+2. **Kontext-Sparring** – ausgehend von Task, Inbox-Item, Lebensbereich o. Ä.  
+3. **Unterthemen-Sparring** – eingebunden in ein Unterthema (Themencontainer) innerhalb eines Lebensbereichs.
 
 ### 4.3 Outputs aus Sparring
 
-Outputs aus Sparring sind **nicht** primär der Chatverlauf, sondern:
+Primär sind nicht Chatverläufe die Wertschöpfung, sondern **strukturierte Outputs**: Gedächtnis-Einträge (Erkenntnis/Entscheidung), Tasks, Entwürfe (Notiz-Typ Entwurf).
 
-- strukturierte Ergebnisse (Erkenntnisse, Entscheidungen),
-- Aufgaben (z.B. über ein vorausgefülltes Aufgabenformular aus Sparring heraus),
-- Entwürfe (z.B. E-Mail-Text, Brief, Nachricht),
-- ggf. strukturierte Notizen. 
+Aus Sparring kann ein vorausgefülltes Aufgabenformular geöffnet werden; nach Bestätigung landet der Task in der globalen Taskliste.
 
-Aus Sparring kann per Button ein vorausgefülltes Aufgabenformular geöffnet werden mit Feldern wie:
+### 4.4 KI und Gedächtnis
 
-- Titel,
-- Beschreibung,
-- Bereich,
-- Tags,
-- Priorität,
-- Person,
-- Fälligkeit,
-- Dauer. 
-
-Alle Felder sind vor Bestätigung editierbar. Der Task landet danach in der zentralen Taskliste; Fälligkeit führt **nicht automatisch** zum Status „planned“. 
-
-### 4.4 Sparring und Memory
-
-- Memory wird aus Sparring **nur** über strukturierte Ergebnisse gespeist (Erkenntnisse, Entscheidungen, bestätigte Zusammenfassungen).   
-- Roh-Chatverläufe werden nicht blind in den Memory-Speicher gekippt. 
+Das Gedächtnis wird aus KI-Arbeit **nur** über bestätigte strukturierte Übernahmen gespeist, nicht durch vollautomatisches Abspeichern ganzer Verläufe.
 
 ---
 
@@ -211,231 +182,122 @@ Alle Felder sind vor Bestätigung editierbar. Der Task landet danach in der zent
 
 ### 5.1 Primärobjekte
 
-Folgende Primärobjekte sind fachlich gesetzt:
+1. **Lebensbereich** – strategischer Kontext (siehe Abschnitt 3).
 
-1. **Bereich**  
-   - Dauerhafte Domäne (siehe oben). 
+2. **Unterthema (Themencontainer)** – Strukturdimension innerhalb eines Lebensbereichs; im Datenmodell: **Projekt** (`projects`).
 
-2. **Projekt / Themencontainer**  
-   - Untergeordneter fachlicher Sammelpunkt in einem Bereich für ein Vorhaben, einen Fall oder ein Thema.  
-   - Bündelt: Tasks, Ergebnisse, Sparring-Chats, Personen, Dateien, Termine, Verknüpfungen. 
+3. **Sparring-Chat (KI-Gespräch)** – Gesprächsinstanz mit Typ (frei, Kontext, Unterthema).
 
-3. **Sparring-Chat**  
-   - Eine konkrete Gesprächsinstanz (frei, kontextbezogen oder projektbezogen). 
+4. **Task** – Planungs- und Arbeitsobjekt im Planning Layer; kein Ersatz für die Inbox.
 
-4. **Task (Aufgabe)**  
-   - Operatives Arbeitsobjekt mit Status, optionaler Planung, Bereichszuordnung und ggf. Personenzuordnung oder Terminbezug.  
-   - Zusätzlich können Tasks fachliche Merkmale wie **Priorität** und **Tags** tragen, um Priorisierung, Sortierung und zusätzliche Kontextverknüpfungen zu unterstützen. 
+5. **Gedächtnis-Eintrag (Ergebnis)** – Oberklasse mit Untertypen **Erkenntnis**, **Entscheidung** – Langzeitwissen.
 
-5. **Ergebnis (Oberklasse)**  
-   - Dauerhaft relevantes, strukturiertes Resultat.  
-   - **Untertypen:**  
-     - **Erkenntnis** – Was haben wir verstanden?  
-     - **Entscheidung** – Was wurde verbindlich festgelegt? 
+6. **Notiz** – kurzlebig / vorläufig; inkl. **Entwurf** (z. B. Text für Nachricht).
 
-6. **Notiz**  
-   - Kurzlebige, vorläufige oder nicht verdichtete Information.  
-   - Dient als Merker oder Zwischenstand; nicht zwingend auf Dauer relevant. 
+7. **Kontakt (Person)** – Bezugseinheit mit optionalen Lebensbereichs-Verknüpfungen.
 
-7. **Person**  
-   - Natürliche oder organisatorische Bezugseinheit (z.B. Mieter, Dienstleister, Geschäftspartner, Familienmitglied).  
-   - In V1 zunächst als einfache Personenbasis mit Stammdaten und Erinnerungsbezug, insbesondere für Geburtstage und optionale Geschenk-Vorerinnerungen. 
+8. **Datei** – Anhang/Dokument mit Mindest-Zuordnung zu einem anderen Objekt.
 
-8. **Datei**  
-   - Dokument oder Anhang, das Bereichen, Projekten, Tasks, Ergebnissen oder Sparring-Kontexten zugeordnet werden kann. 
+9. **Kalendertermin** – zeitbezogenes Ereignis (eigene Anlage oder Sync).
 
-9. **Kalendertermin**  
-   - Zeitbezogenes Ereignis; Quelle u.a. Outlook/Graph oder direkte Anlage über Leif OS.  
-   - Grundlage für Tagessteuerung, Wochensteuerung, Kapazität, Vorbereitungslogik und Zeitplanung. 
+10. **Inbox-Item** – **Übergangsobjekt** im Input Layer: neu, ungeklärt, aus Quelle (z. B. Telegram; perspektivisch weitere Kanäle). Kein dauerhafter Endzustand.
 
-10. **Inbox-Item**  
-    - Ungeklärter Eingang aus einer Quelle (Telegram, Kalender, To Do, E-Mail).  
-    - Muss in Task, Ergebnis, Sparring, Entwurf oder „Verwerfen“ überführt werden. 
+### 5.2 Inbox-Item: Review und Zielobjekte
 
-### 5.2 Task-Merkmale: Bereich, Status, Priorität, Tags
+Die Inbox ist **kein** Task-Eingang und **kein** Mailpostfach, sondern **Capture- und Review-Ort**. Jedes Item soll einen **Review** mit klarer Folgeentscheidung durchlaufen.
 
-Für Tasks gelten vier klar getrennte fachliche Einordnungsdimensionen:
+**Mögliche Zielrichtungen** (an bestehende und geplante Aktionen anknüpfbar):
 
-- **Bereich**  
-  Der Bereich beschreibt den primären fachlichen Kontextraum, zu dem ein Task gehört, z.B. Hausverwaltung, Finanzen Privat oder Gesundheit/Sport.  
-  Jeder Task gehört genau einem Hauptbereich an.  
-  Der Bereich beantwortet die Frage: **„Wozu gehört dieser Task?“** 
+- in **Task** überführen (Planung später im Task/Kalender),
+- in **Notiz** oder **Entwurf** überführen,
+- in **Gedächtnis** übernehmen,
+- **KI-Sparring** starten,
+- **Kontakt** anlegen oder zuordnen (sobald fachlich/technisch vorgesehen),
+- Lebensbereich und Unterthema zuordnen bzw. vormerken,
+- **verwerfen** oder **archivieren**,
+- **zurückstellen** / spätere Sichtung (fachlich wünschenswert; Umsetzung kann später erfolgen),
+- **als gelesen markieren** (nur Aufmerksamkeit, keine fachliche Erledigung).
 
-- **Status**  
-  Der Status beschreibt den Lebenszyklus bzw. Bearbeitungszustand des Tasks.  
-  Erlaubte Statuswerte sind ausschließlich: `inbox`, `open`, `planned`, `done`, `canceled`.  
-  Der Status beantwortet die Frage: **„Wo steht der Task im Arbeitsverlauf?“** 
+**Wichtig:** „Als gelesen markieren“ ersetzt keine Überführung in ein Zielobjekt, verschiebt aber die Dringlichkeit (z. B. im Dashboard).
 
-- **Priorität**  
-  Die Priorität beschreibt die relative Wichtigkeit eines Tasks im Verhältnis zu anderen offenen Tasks.  
-  Für V1 genügen drei Stufen: `high`, `medium`, `low`.
-  Die Priorität beantwortet die Frage: **„Wie wichtig ist dieser Task aktuell?“** 
+### 5.3 Task-Merkmale: Lebensbereich, Status, Priorität, Tags
 
-- **Tags**  
-  Tags sind frei kombinierbare Zusatzmarkierungen, mit denen Tasks weiter eingeordnet werden können.  
-  Tags können fachliche Zusatzkontexte, Schlagworte oder Querbezüge abbilden und dürfen auch Begriffe enthalten, die Bereiche ergänzen oder mit ihnen zusammenhängen.  
-  Tags ersetzen jedoch nicht die primäre Bereichszuordnung.  
-  Tags beantworten die Frage: **„Welche zusätzlichen Kontexte oder Schlagworte passen zu diesem Task?“** 
+- **Lebensbereich** – primärer strategischer Kontext („Wozu gehört dieser Task?“). Jeder Task hat genau einen Lebensbereich.
 
-Tags dürfen nicht verwendet werden, um Statuswerte zu ersetzen.  
-Ebenso dürfen sie die primäre Bereichszuordnung nicht unklar machen oder auflösen. 
+- **Status** – Lebenszyklus im Planning Layer: `inbox`, `open`, `planned`, `done`, `canceled` (siehe 5.4).  
+  *Hinweis:* Der Statuswert `inbox` am Task signalisiert „aus Eingang übernommen, noch nicht endgültig einsortiert“ – er ist **nicht** identisch mit der fachlichen Inbox-Seite.
 
-### 5.3 Zentrale Beziehungslogik
+- **Priorität** – `high`, `medium`, `low`.
 
-- Bereich → Projekt/Themencontainer → Sparring-Chats, Tasks, Ergebnisse, Notizen, Dateien, Personen, Termine.   
-- Inbox-Item → (Task | Sparring-Chat | Ergebnis | Entwurf | Verwerfen).   
-- Kalendertermin ↔ Tasks (Planung, Vorbereitung, Kapazität).   
-- Ergebnisse (Erkenntnisse/Entscheidungen) ↔ Memory, Bereich(e), Projekte.   
-- Personen ↔ Tasks, Bereiche, Projekte, Termine sowie später Erinnerungs- und Relevanzlogiken. 
+- **Tags** – freie Zusatzmarkierungen; ersetzen weder Status noch Lebensbereich.
 
-### 5.4 Lebenszyklus & Statusregeln – Task
+### 5.4 Lebenszyklus und Statusregeln – Task
 
-#### 5.4.1 Zweck des Task-Statusmodells
+#### 5.4.1 Zweck
 
-Das Task-Statusmodell soll die operative Arbeitssteuerung unterstützen, ohne ein Ticketsystem abzubilden.  
-Es folgt dem Prinzip: „Ich plane, ich tue, fertig.“ und vermeidet unnötige Zwischenzustände. 
+Das Modell unterstützt operative Steuerung ohne Ticketsystem: *planen – tun – abschließen.*
 
 #### 5.4.2 Erlaubte Statuswerte
 
-Ein Task kann ausschließlich folgende Statuswerte haben:
+`inbox`, `open`, `planned`, `done`, `canceled` – siehe bestehende Definitionen in V1-Scope und Objektmodell (keine `in_progress` / `waiting`).
 
-- **inbox**  
-  Task wurde aus einem Eingang (z.B. Inbox-Item aus Telegram, später E-Mail etc.) erzeugt, ist aber fachlich noch nicht endgültig entschieden oder einsortiert. 
+#### 5.4.3 Entstehung
 
-- **open**  
-  Akzeptierte Aufgabe ohne feste zeitliche Verankerung.  
-  Der Task ist „auf der Liste“, aber nicht einem konkreten Tag/Slot/Termin zugeordnet. 
+Tasks aus Inbox-Überführung starten in der Regel mit `inbox`; manuell angelegte Tasks mit `open`.
 
-- **planned**  
-  Aufgabe ist bewusst zeitlich verankert – z.B. einem Tag, einem Zeitfenster oder einem konkreten Termin zugeordnet.  
-  Eine reine Fälligkeit ohne bewusste Planung reicht dafür nicht aus. 
+#### 5.4.4 Erlaubte Wechsel
 
-- **done**  
-  Aufgabe ist fachlich erledigt.  
-  Es gibt keine weiteren Handlungen, die im Rahmen dieses Tasks notwendig sind. 
+Unverändert: `inbox` → `open` / `planned` / `canceled`; `open` → `planned` / `done` / `canceled`; `planned` → `done` / `canceled`; terminal `done` / `canceled`.
 
-- **canceled**  
-  Aufgabe wird nicht (mehr) verfolgt (z.B. obsolet, anderer Weg gewählt, Entscheidung gegen Umsetzung). 
+### 5.5 Zentrale Beziehungslogik (kurz)
 
-#### 5.4.3 Entstehung und Start-Status
-
-- Tasks, die aus einem **Inbox-Item** entstehen, starten in der Regel mit Status **inbox**, solange die Entscheidung über Art, Priorität oder Planung noch aussteht.   
-- Tasks, die **manuell** (z.B. direkt in einem Bereich, Projekt/Themencontainer oder auf der Task-Seite) angelegt werden, starten in der Regel direkt als **open**. 
-
-#### 5.4.4 Erlaubte Statuswechsel
-
-Folgende Statuswechsel sind fachlich vorgesehen:
-
-- inbox → open  
-- inbox → planned  
-- inbox → canceled
-
-- open → planned  
-- open → done  
-- open → canceled
-
-- planned → done  
-- planned → canceled
-
-- done → (kein weiterer Wechsel vorgesehen, Änderungen nur in begründeten Ausnahmefällen)  
-- canceled → (kein weiterer Wechsel vorgesehen, Änderungen nur in begründeten Ausnahmefällen) 
-
-Rückwärtswechsel (z.B. done → open) sind fachlich nicht vorgesehen und sollten, falls technisch möglich, seltene Sonderfälle bleiben (Fehleingaben, Korrekturen). 
-
-#### 5.4.5 Nicht genutzte Statuskonzepte
-
-Es gibt bewusst **keine** Statuswerte wie in_progress oder waiting.   
-- „Ich arbeite daran“ ist ein Arbeitszustand, der über Fokus, Tagessteuerung oder Kalender, nicht über einen eigenen Statuswert, abgebildet wird.   
-- „Ich warte auf etwas“ führt entweder dazu, dass der bestehende Task als **done** gilt (z.B. „Mail gesendet, jetzt warten“) und bei Eintreffen der Antwort ein neuer Task für die Anschlussaktion entsteht, oder der Task bleibt **open/planned**, bis klar ist, dass keine weitere Aktion notwendig ist. 
-
-Damit bleibt das Statusmodell schlank und alltagstauglich, ohne dass Leif OS in Richtung Ticketsystem driftet. 
+- Lebensbereich → Unterthemen → verknüpfte Objekte (Sicht),  
+- Inbox-Item → Review → Zielobjekt oder Abschluss,  
+- Kalendertermin ↔ Tasks (Planung),  
+- Gedächtnis-Einträge ↔ Lebensbereiche (n:m), optional Unterthema,  
+- Kontakte ↔ Lebensbereiche, Tasks, Termine.
 
 ---
 
 ## 6. Seitenarchitektur (fachlich)
 
-### 6.1 Ebenen der Seiten
+### 6.1 Ebenen
 
-1. **Globale Seiten** (Maintabs)  
-   - Dashboard, Bereiche, Sparring, Inbox, Tasks, Kalender, Personen, Einstellungen. 
+1. **Globale Seiten** (Maintabs) – Dashboard, Inbox, KI, Tasks, Kalender, Lebensbereiche, Gedächtnis, Notizen, Kontakte.
 
-2. **Bereichsseiten**  
-   - Je Bereich eine eigene Hauptseite mit bereichsspezifischen Teilansichten. 
+2. **Bereichsseiten** – Kontext- und Unterthemen-Sicht.
 
-3. **Objekt-/Detailseiten**  
-   - Projekte/Themencontainer, Sparring-Chats, Tasks (Detail ggf.), Personen, ggf. Termin-/Inbox-Details. 
+3. **Objekt-/Detailseiten** – Unterthemen, KI-Gespräche, Tasks, Kontakte, ggf. Termin- oder Inbox-Details.
 
-### 6.2 Globale Seiten – Zwecke
+### 6.2 Dashboard
 
-- **Dashboard:**  
-  Zentrale Start- und Steuerungsseite für den aktuellen Tag.  
-  Im Mittelpunkt stehen eine **empfohlene nächste Aufgabe** als verdichtete Priorisierungshilfe, die Sicht auf neue ungeklärte Eingänge, eine kompakte Tagesanzeige für heute, eine einfache Kapazitätssicht sowie ein kompakter Finanzüberblick. 
+Beantwortet: **Was ist heute und diese Woche wirklich relevant?**  
+Steuerzentrale mit Fokus auf **einer empfohlenen nächsten Aufgabe**, kompakter Inbox-Sicht (neu/ungelesen), heutiger Lage (Termine, geplante Tasks), Kapazität und Finanz-Kurzblick – **nicht** als Ersatz für die vollständige Inbox- oder Taskseite.
 
-  Das Dashboard ist bewusst keine vollständige Task- oder Inbox-Seite.  
-  Es dient der fokussierten Tagessteuerung: Mitte = priorisierte Handlung, rechts = Lage und Tageskontext. 
+### 6.3 Inbox
 
-- **Bereiche:**  
-  Liste/Übersicht der Bereiche; Zugang zu den Bereichsseiten. 
+**Capture und Review** – nicht Arbeitsliste für alles und nicht Ablage. Volle Verarbeitung auf der Inbox-Seite; Dashboard nur als Einstieg.
 
-- **Sparring:**  
-  Übersicht über freie und globale Sparring-Kontexte, Start neuer freier Sparrings. 
+### 6.4 Tasks und Kalender
 
-- **Inbox:**  
-  Verarbeitungsliste aller aktuellen Eingänge (Telegram, später Kalender, To Do, E-Mail etc.).  
-  Die Inbox dient der Klärung, Einordnung und Überführung von Eingängen in passende Folgeobjekte. 
+Planning Layer: globale Taskführung; Kalender verbindet Termine und geplante Tasks mit Kapazitätssicht.
 
-- **Tasks:**  
-  Globale Arbeitsfläche für Aufgaben mit Priorisierungsfunktion, Statusführung, Bearbeitung, Planung, Sortierung und Filterung.  
-  Die Seite bündelt die vollständige globale Sicht auf Aufgaben; zusätzlich kann sie eine **empfohlene nächste Aufgabe** als priorisierten Einstieg anzeigen. 
+### 6.5 KI (Sparring)
 
-- **Kalender:**  
-  Operative Kalender- und Planungssicht mit mindestens Tages- und einfacher Wochenansicht.  
-  Anzeige von Outlook-/Graph-Terminen, Sichtbarkeit geplanter Tasks im Zeitkontext sowie einfache Termin-Erstellung im Outlook-Kalender.  
-  Der Kalender unterstützt damit Tages- und Wochensteuerung sowie die Einordnung verfügbarer Kapazität. 
+Thinking Layer: Übersicht, neues Gespräch, Chat mit strukturierten Übernahmen.
 
-- **Personen:**  
-  Liste und Detailzugang zu Personen.  
-  Im V1-Fokus steht eine einfache Personenliste mit Vorname, Nachname, Kategorie sowie optional Anschrift und Geburtstag.  
-  Zusätzlich sollen Geburtstags-Erinnerungen und optional vorgelagerte Erinnerungen für Geschenkvorbereitung unterstützt werden. 
+### 6.6 Gedächtnis und Notizen
 
-- **Einstellungen:**  
-  Einstellungen bleiben Teil des Zielbilds, stehen im V1 des Neustarts aber nicht im Vordergrund und können zunächst ohne eigenen ausgebauten Maintab zurückgestellt werden. 
+**Gedächtnis** – Langzeitwissen (Erkenntnisse, Entscheidungen).  
+**Notizen** – kurzlebige Merker und Entwürfe; keine Ablösung des Gedächtnisses.
 
-### 6.3 Bereichsseiten – Grundstruktur
+### 6.7 Kontakte
 
-Pro Bereich mindestens:
+Globale Personenbasis; Verknüpfung zu Lebensbereichen; keine CRM-Vollsubstitution in V1.
 
-- **Überblick:**  
-  Wichtigste offene Punkte, Kennzahlen, zentrale Verlinkungen.
+### 6.8 Einstellungen
 
-- **Projekte / Themencontainer:**  
-  Liste der Projekte/Fälle/Topics im Bereich.
-
-- **Tasks (bereichsgefiltert):**  
-  Sicht auf alle Aufgaben dieses Bereichs.
-
-- **Ergebnisse:**  
-  Erkenntnisse und Entscheidungen des Bereichs.
-
-- **Sparring:**  
-  Sparring-Historie und Startpunkt für neues bereichsbezogenes Sparring.
-
-- **Querverbindungen:**  
-  Explizite Verknüpfungen zu anderen Bereichen (z.B. Finanzentscheidungen mit Auswirkung auf Hausverwaltung und Finanzen Firma). 
-
-### 6.4 Objektseiten
-
-- **Projekt-/Themencontainer-Seite:**  
-  Sammelansicht aller zugehörigen Tasks, Ergebnisse, Sparring-Chats, Personen, Dateien, Termine, Verknüpfungen. 
-
-- **Sparring-Chat-Seite:**  
-  Chatverlauf + strukturierte Ergebnisablage + Buttons für „als Ergebnis übernehmen“, „Task aus Sparring anlegen“, „Entwurf erstellen“. 
-
-- **Task-Detailseite (optional):**  
-  Falls Bearbeitung/Planung mehr Raum braucht als reine Dialoge/Sheets.
-
-- **Person-Detail:**  
-  Relevante Informationen, zugeordnete Aufgaben, Termine, Bereiche sowie perspektivisch Erinnerungslogiken. 
+Zielbild: eigenständiger Bereich; V1: nicht priorisiert.
 
 ---
 
@@ -443,65 +305,30 @@ Pro Bereich mindestens:
 
 ### 7.1 Grundprinzip
 
-- Der Neustart erfolgt als **Parallel-Projekt**, nicht als Hard Reset.  
-- Bestehende Umsetzung und Roadmap bleiben Referenz; der neue Pfad wird sauberer strukturiert, besser dokumentiert und mit klarer Verantwortungs- und Pfadlogik aufgebaut. 
+Neustart als **Parallel-Projekt** ohne Hard Reset der fachlichen Idee; Umsetzung und Roadmap bleiben Referenz.
 
 ### 7.2 Schritte vor dem ersten Code im Neustart
 
-1. **Anforderungsdoku fertigstellen**  
-   - Dieses Dokument finalisieren und als zentrale fachliche Referenz einfrieren.
+1. Anforderungsdoku (dieses Dokument) und abhängige Doku konsistent halten.  
+2. Route Map, Objektmodell, Datenmodell, Implementation Map abstimmen.  
+3. Keine Felder, Statuswerte oder Tabellen „ohne Spur“ in der Doku.
 
-2. **Technische Doku-Struktur definieren**  
-   - Dokumenttypen:  
-     - Produkt-Anforderungen (dieses Dokument),  
-     - Route Map (Seiten und Zuständigkeiten),  
-     - Implementation Map (für jede Funktion: Route, Page-Datei, Komponenten, Actions/Queries, Tabellen, Workflows),  
-     - Datenmodell-Doku (Tabellen, Felder, Constraints, Statuswerte, Relationen),  
-     - Änderungsprotokoll (jede strukturelle Änderung an Pfaden, Zuständigkeiten oder Datenmodell). 
+### 7.3 Disziplin
 
-3. **Route Map entwerfen (ohne konkrete Dateipfade)**  
-   - Pro Seite: Zweck, Objekte, Aktionen, global vs. Bereich vs. Objekt.  
-   - Explizit festhalten: Welche Routen sind global, welche hängen unter einem Bereichskontext, wo werden Dinge erstellt, bearbeitet, kontextbezogen angezeigt. 
-
-4. **Objektmodell verfeinern**  
-   - Beziehungen zwischen Bereich, Projekt, Sparring, Tasks, Ergebnissen, Inbox-Items, Personen, Dateien und Terminen auf fachlicher Ebene in einer kompakten Modellskizze festhalten.  
-   - Erst danach konkrete Tabellen/Spalten definieren. 
-
-5. **Datenmodell-Doku (erste Version)**  
-   - Tabellen + Felder + Statuswerte + Relationen grob beschreiben, passend zum Objektmodell (kein Blind-Refactoring). 
-
-6. **Implementation Map (Stub)**  
-   - Noch ohne konkreten Code, aber mit geplanter Verortung:  
-     - Welche Funktion gehört auf welche Seite,  
-     - welche Serveraktionen / Queries sind vorgesehen,  
-     - welche Tabellen und Workflows greifen wo. 
-
-7. **Neuer Projektpfad + Repo-Struktur definieren**  
-   - Erst wenn Anforderungen, Objektmodell und Route Map stehen.  
-   - Kein abstraktes Ordner-Gebirge, sondern nur Strukturen, die durch Anforderungen gedeckt sind. 
-
-8. **UI-Konzept konkretisieren**  
-   - Layout-System, Navigation (Maintabs + Bereichsnavigation), Container-/Projektansichten, globale vs. lokale Aktionen, wichtige Flows (z.B. Sparring → Task, Inbox → Task, Finanzüberblick Dashboard). 
-
-9. **Erst dann: neues Projekt initialisieren**  
-   - Neues Repo / Ordner, neues Next.js-Gerüst, initiale Doku-Dateien, erster Umsetzungsblock. 
-
-### 7.3 Disziplin für den Neustart
-
-- Keine Implementierung ohne Verortung in Produkt-Anforderungen + Route Map + Implementation Map.   
-- Keine Felder, Statuswerte, Variablen, Pfade, Komponenten oder Tabellen „aus dem Bauch heraus“.   
-- Zuerst immer fachliche Anforderungen und dokumentierte Zuständigkeiten, dann Umsetzung. 
+Keine Implementierung ohne Verortung in Produkt-Anforderung + Route Map + Implementation Map.
 
 ---
 
-## 8. Nächste konkrete Schritte im neuen Space
+## 8. Nächste konkrete Schritte
 
-1. **Diese Produkt-Anforderung als Startpunkt übernehmen und ggf. minimal nachschärfen.**  
-2. **Neuen Block im neuen Space definieren:**  
-   - Block: *Technische Doku-Struktur & Route Map Neustart*  
-3. **Dann: Route Map + Implementation Map-Layout erarbeiten**, bevor eine einzige neue Datei im neuen Repo angelegt wird.   
-4. **V1-Scope bewusst eng halten**  
-   - Der V1-Fokus liegt auf Dashboard, Inbox, Tasks, Sparring, Kalender sowie einer einfachen Bereichs- und Personenlogik.  
-   - Einstellungen sind im Zielbild weiterhin vorgesehen, gehören aber nicht zum priorisierten Kern des Neustarts.  
-   - Der finanzielle Dashboard-Überblick (Gesamtvermögen, einfache Portfolio-Sichten) ist fachlich wichtig, soll jedoch in V1 bewusst schlank und ohne historische Performance-Logik umgesetzt werden.  
-   - Die Priorisierungsfunktion über die **empfohlene nächste Aufgabe** sowie ein einfach operativ nutzbarer Kalender gehören zum V1-Kern. 
+1. Diese Produkt-Anforderung als fachliche Referenz nutzen.  
+2. UI und Datenmodell **schrittweise** an die geschärfte Leitlogik anbinden (ohne dass dieses Dokument einzelne Releases ersetzt).  
+3. V1-Scope bei Abweichungen bewusst nachziehen.
+
+---
+
+## Änderungsprotokoll (Dokument intern)
+
+| Datum | Änderung |
+|---|---|
+| 2026-04-12 | Neuaufstellung: Strategie-/Planungs-/Entscheidungs-OS; drei Ebenen Input/Thinking/Planning; Inbox als Capture/Review; Mail aus dem Kern; Lebensbereiche und Unterthemen; KI- und Gedächtnisrollen; Dashboard als Steuerzentrale. |

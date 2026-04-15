@@ -1,15 +1,24 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   logRecommendationFeedback,
   updateTaskStatus,
   type RecommendationFeedbackInput,
 } from "@/app/(app)/tasks/actions";
+import { AlertBanner } from "@/components/ui/alert-banner";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SectionTitle } from "@/components/ui/page-header";
+import { StatusChip } from "@/components/ui/status-chip";
+import { taskPriorityChipTone, taskStatusChipTone } from "@/lib/tasks/chip-tones";
+import type { TaskTypeRow } from "@/lib/task-types/defaults";
 import type { RecommendationBreakdown } from "@/lib/tasks/recommended";
-import type { AreaRow, TaskStatus, TaskWithRelations } from "@/lib/tasks/types";
+import type { AreaRow, TaskWithRelations } from "@/lib/tasks/types";
 import { TASK_PRIORITIES, TASK_STATUSES } from "@/lib/tasks/types";
+import { ListTodo } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { TaskFormDialog } from "./task-form-dialog";
 
 function formatDate(iso: string | null): string {
@@ -51,6 +60,7 @@ type Props = {
   task: TaskWithRelations | null;
   breakdown: RecommendationBreakdown | null;
   areas: AreaRow[];
+  taskTypes?: TaskTypeRow[];
   recommendationError?: string | null;
   heading?: string;
 };
@@ -59,18 +69,18 @@ export function RecommendedTaskBlock({
   task,
   breakdown,
   areas,
+  taskTypes,
   recommendationError,
-  heading = "Empfohlene nächste Aufgabe",
+  heading = "Empfohlene Aufgabe",
 }: Props) {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const feedbackAccepted =
-    task && breakdown ? acceptedFeedback(task.id, breakdown) : null;
+  const feedbackAccepted = task && breakdown ? acceptedFeedback(task.id, breakdown) : null;
 
-  async function runStatus(newStatus: TaskStatus) {
+  async function runStatus(newStatus: "done" | "open") {
     if (!task || !feedbackAccepted) return;
     setActionError(null);
     setPending(true);
@@ -105,125 +115,61 @@ export function RecommendedTaskBlock({
   }
 
   return (
-    <section className="space-y-3" aria-labelledby="recommended-task-heading">
-      <h2 id="recommended-task-heading" className="text-lg font-semibold tracking-tight">
-        {heading}
-      </h2>
+    <section className="space-y-4" aria-labelledby="recommended-task-heading">
+      <SectionTitle id="recommended-task-heading">{heading}</SectionTitle>
 
       {recommendationError ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-200">
-          Empfehlung konnte nicht geladen werden: {recommendationError}
-        </p>
+        <AlertBanner variant="error">Empfehlung konnte nicht geladen werden: {recommendationError}</AlertBanner>
       ) : null}
 
-      {actionError ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-200">
-          {actionError}
-        </p>
-      ) : null}
+      {actionError ? <AlertBanner variant="error">{actionError}</AlertBanner> : null}
 
       {!recommendationError && !task ? (
-        <p className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-4 py-6 text-sm text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/40 dark:text-zinc-400">
-          Keine offenen oder geplanten Tasks – oder es gibt nichts zu empfehlen. Lege Tasks an oder
-          setze den Status auf „Offen“ oder „Geplant“.
-        </p>
+        <EmptyState
+          illustration={<ListTodo />}
+          title="Keine empfohlene Aufgabe"
+          description='Keine offenen Tasks – oder es gibt aktuell nichts zu empfehlen. Lege Tasks an oder setze den Status auf "Offen".'
+        />
       ) : null}
 
       {task && breakdown ? (
-        <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0 space-y-1">
-              <p className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{task.title}</p>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                {task.area_name}
-                <span className="mx-2 text-zinc-300 dark:text-zinc-600">·</span>
-                {priorityLabel(task.priority)}
-                <span className="mx-2 text-zinc-300 dark:text-zinc-600">·</span>
-                {statusLabel(task.status)}
-              </p>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Fällig: <span className="tabular-nums">{formatDate(task.due_date)}</span>
-                {task.tags.length > 0 ? (
-                  <>
-                    <span className="mx-2 text-zinc-300 dark:text-zinc-600">·</span>
-                    {task.tags.join(", ")}
-                  </>
-                ) : null}
-              </p>
+        <Card className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0 flex-1 space-y-3">
+              <h3 className="text-[16px] font-semibold leading-snug tracking-tight text-leif-text">{task.title}</h3>
+              <div className="flex flex-wrap gap-2">
+                <StatusChip tone={taskPriorityChipTone(task.priority)}>{priorityLabel(task.priority)}</StatusChip>
+                <StatusChip tone={taskStatusChipTone(task.status)}>{statusLabel(task.status)}</StatusChip>
+              </div>
+              <div className="space-y-1 text-[13px] text-leif-secondary">
+                <p>
+                  Geplant: <span className="tabular-nums text-leif-text">{formatDate(task.planned_date)}</span>
+                </p>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => setDialogOpen(true)}
-                className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-900"
-              >
-                Bearbeiten
-              </button>
-            </div>
+            <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={() => setDialogOpen(true)}>
+              Bearbeiten
+            </Button>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
-            {task.status === "open" ? (
+          <div className="mt-6 flex flex-wrap gap-2 border-t border-leif-divider pt-5">
+            {task.status !== "erledigt" ? (
               <>
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() => runStatus("done")}
-                  className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
-                >
+                <Button type="button" variant="primary" size="sm" disabled={pending} onClick={() => runStatus("done")}>
                   Erledigt
-                </button>
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() => runStatus("planned")}
-                  className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-900"
-                >
-                  Geplant
-                </button>
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() => runStatus("canceled")}
-                  className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                >
-                  Abbrechen
-                </button>
-              </>
-            ) : null}
-            {task.status === "planned" ? (
-              <>
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() => runStatus("done")}
-                  className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
-                >
-                  Erledigt
-                </button>
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() => runStatus("canceled")}
-                  className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                >
-                  Abbrechen
-                </button>
+                </Button>
+                <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={() => runStatus("open")}>
+                  Wieder offen
+                </Button>
               </>
             ) : null}
             <div className="flex basis-full justify-end pt-1">
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => runSkip()}
-                className="rounded-md px-3 py-1.5 text-sm text-zinc-500 underline-offset-2 hover:underline disabled:opacity-50 dark:text-zinc-400"
-              >
+              <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => runSkip()}>
                 Nicht dieser Task
-              </button>
+              </Button>
             </div>
           </div>
-        </div>
+        </Card>
       ) : null}
 
       {task && feedbackAccepted ? (
@@ -232,6 +178,7 @@ export function RecommendedTaskBlock({
           mode="edit"
           task={task}
           areas={areas}
+          taskTypes={taskTypes}
           onClose={() => setDialogOpen(false)}
           recommendationFeedback={feedbackAccepted}
         />

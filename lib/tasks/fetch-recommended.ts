@@ -32,7 +32,7 @@ export async function fetchRecommendedTask(
     .from("tasks")
     .select("*")
     .eq("user_id", userId)
-    .in("status", ["open", "planned"])
+    .is("completed_at", null)
     .order("updated_at", { ascending: false });
 
   if (taskErr) {
@@ -44,25 +44,7 @@ export async function fetchRecommendedTask(
     return { task: null, breakdown: null, areas: areas ?? [], error: null };
   }
 
-  const taskIds = tasks.map((t) => t.id);
-  const tagsByTask: Record<string, string[]> = {};
-  const { data: tagRows, error: tagErr } = await supabase
-    .from("task_tags")
-    .select("task_id, tag")
-    .in("task_id", taskIds);
-
-  if (tagErr) {
-    return { task: null, breakdown: null, areas: areas ?? [], error: tagErr.message };
-  }
-
-  for (const row of tagRows ?? []) {
-    const tid = row.task_id as string;
-    const tag = row.tag as string;
-    tagsByTask[tid] ??= [];
-    tagsByTask[tid].push(tag);
-  }
-
-  const merged = mergeTasksWithAreasAndTags(tasks, areas ?? [], tagsByTask);
+  const merged = mergeTasksWithAreasAndTags(tasks, areas ?? [], {});
   const todayYmd = todayYmdInRecommendationTz();
   const picked = pickRecommendedTask(merged, todayYmd);
 

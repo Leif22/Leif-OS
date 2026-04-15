@@ -6,11 +6,25 @@
 
 Diese Datei beschreibt das fachliche Objektmodell von Leif OS: Welche Objekttypen es gibt, welche Rolle jeder Typ im System spielt, und wie die Objekte zueinander in Beziehung stehen.
 
-Das Objektmodell ist die Brücke zwischen Produkt-Anforderungen (fachliches Zielbild) und Datenmodell (Tabellen, Felder, Relationen). Es sorgt dafür, dass kein Feld, keine Tabelle und keine Relation „aus dem Bauch" entsteht, sondern auf einer fachlich definierten Grundlage steht.
+Das Objektmodell ist die Brücke zwischen `Produkt-Anforderung.md` (fachliches Zielbild) und Datenmodell (Tabellen, Felder, Relationen). Es sorgt dafür, dass kein Feld, keine Tabelle und keine Relation „aus dem Bauch" entsteht, sondern auf einer fachlich definierten Grundlage steht.
 
 **Leitfrage:** *Welche fachlichen Bausteine existieren in Leif OS, was ist ihre Aufgabe, und wie hängen sie zusammen?*
 
 **Gehört nicht hierher:** Tabellen, Felder, Constraints (→ Datenmodell.md), Seiten, Routen, Navigation (→ Route-Map.md), Komponenten, Actions, Queries (→ Implementation-Map.md), Produktvision, Scope-Entscheidungen (→ Produkt-Anforderung.md, V1-Scope.md).
+
+---
+
+## 0.1 Drei Systemebenen (Bezug zum Produkt)
+
+Fachlich wird Leif OS über **drei Ebenen** beschrieben (→ `Produkt-Anforderung.md`):
+
+| Ebene | Typische Objekte / Orte |
+|---|---|
+| **Input** | Inbox-Item (Übergang), Schnellerfassung, bewusst eingespielte Kanal-Inhalte |
+| **Thinking** | Sparring-Chat, Lebensbereich, Unterthema, Gedächtnis-Eintrag (Ergebnis), Notiz |
+| **Planning** | Task, Kalendertermin, Tages-/Wochenplanung |
+
+Objekte können zwischen Ebenen **wechseln** (z. B. Inbox-Item → Task), ohne dass die Ebenen in der UI oder im Denkmodell **vermischt** werden sollten.
 
 ---
 
@@ -20,9 +34,9 @@ Die Primärobjekte von Leif OS lassen sich in fünf Kategorien einteilen. Die Ka
 
 | Kategorie | Rolle im System | Objekte |
 |---|---|---|
-| **Kontext-Container** | Dauerhafte fachliche Räume, die andere Objekte bündeln und Orientierung geben. | Bereich, Projekt/Themencontainer |
-| **Arbeitsobjekte** | Operative Einheiten, an denen aktiv gearbeitet wird und die einen Lebenszyklus durchlaufen. | Task, Sparring-Chat, Inbox-Item |
-| **Ergebnisobjekte** | Strukturierte, dauerhaft relevante Resultate aus Arbeit oder Sparring. | Ergebnis (Erkenntnis, Entscheidung) |
+| **Kontext-Container** | Dauerhafte fachliche Räume bzw. Strukturdimensionen, die Orientierung geben – **keine** Ordnerhierarchie. | Lebensbereich (Bereich), Unterthema (technisch: Projekt/Themencontainer) |
+| **Arbeitsobjekte** | Einheiten mit aktivem Lebenszyklus an der Schnittstelle von Input, Denken oder Planung. | Task, Sparring-Chat, Inbox-Item |
+| **Ergebnisobjekte** | Strukturierte, dauerhaft relevante Resultate – **Langzeitwissen** („Gedächtnis"). | Ergebnis (Erkenntnis, Entscheidung) |
 | **Zwischenobjekte** | Kurzlebige, vorläufige Informationen ohne Anspruch auf dauerhafte Relevanz. | Notiz (inkl. Entwurf) |
 | **Ressourcen** | Bezugseinheiten und Referenzobjekte, die anderen Objekten zugeordnet werden. | Person, Datei, Kalendertermin |
 | **Externe Daten** | Gecachte Daten aus angebundenen externen Systemen, die nicht in Leif OS gepflegt, sondern periodisch synchronisiert werden. | Portfolio-Snapshot, Portfolio-Position |
@@ -31,23 +45,25 @@ Die Primärobjekte von Leif OS lassen sich in fünf Kategorien einteilen. Die Ka
 
 ## 2. Objekttypen im Detail
 
-### 2.1 Bereich
+### 2.1 Bereich (Lebensbereich)
 
-- **Rolle:** Dauerhafter Kontextraum einer Lebens- oder Arbeitsdomäne. Bündelt alle fachlich zugehörigen Objekte.
-- **Beispiele:** Hausverwaltung, Finanzen Firma, Finanzen Privat, Familie/Privat, Gesundheit/Sport.
-- **Abgrenzung:** Ein Bereich ist kein Projektordner, kein Sammelcontainer und keine isolierte Sandbox. Er bleibt mit dem Gesamtsystem verbunden. Bereiche werden nicht ad hoc angelegt, sondern sind dauerhaft und stabil.
-- **Lebenszyklus:** Kein Status – Bereiche bestehen dauerhaft.
+- **Rolle:** **Strategischer Kontext** einer Lebens- oder Arbeitsdomäne – Orientierungsebene, Filter, Denkraum. Objekte sind **global** und werden im Bereich **sichtbar gemacht**, nicht „physisch abgelegt".
+- **Beispiele:** Hausverwaltung, Finanzen Firma, Finanzen Privat, Familie/Privat, Gesundheit/Sport (Referenzliste; konkrete Namen können an die Nutzerrealität angepasst werden, sofern das Datenmodell es erlaubt).
+- **Abgrenzung:** Kein Projektordner, kein Dateisystem-Ordner, kein Sammelcontainer für beliebige Lose-Information und keine isolierte Sandbox. Verbindung zum Gesamtsystem bleibt bestehen.
+- **Lebenszyklus:** Kein fachlicher Status – Lebensbereiche sind persistente Kontexte.
 
-### 2.2 Projekt / Themencontainer
+### 2.2 Unterthema (Projekt / Themencontainer)
 
-- **Rolle:** Untergeordneter fachlicher Sammelpunkt innerhalb eines Bereichs für ein Vorhaben, einen Fall oder ein Thema. Bündelt Tasks, Ergebnisse, Sparring-Chats, Personen, Dateien, Termine und Querverweise.
-- **Beispiele:** „Mieterwechsel Wohnung 3.OG", „Steuererklärung 2025", „Küchen-Renovierung".
-- **Abgrenzung:** Ein Projekt gehört immer zu genau einem Bereich. Es ist kein globales Objekt, sondern ein Strukturmittel innerhalb einer Domäne.
+- **Produktsprache:** **Unterthema** – thematische Strukturdimension **innerhalb** eines Lebensbereichs (Kategorie, Themencluster).
+- **Technische Abbildung:** Tabelle `projects` („Projekt / Themencontainer") – der Begriff „Projekt" ist historisch; fachlich ist dies **kein** klassisches PM-Projekt und **kein** Ordner.
+- **Rolle:** Bündelt Sicht und Verknüpfungen zu Tasks, Gedächtnis-Einträgen, Sparring-Chats, Personen, Dateien, Terminen und Notizen **in diesem Kontext**.
+- **Beispiele:** Im Bereich „Firma": Personal, Marketing, Strategie, Finanzen.
+- **Abgrenzung:** Genau ein übergeordneter Lebensbereich. Keine verschachtelte „Ordner > Unterordner > Datei"-Logik: Zuordnung lautet *Objekt gehört zu Bereich X und Unterthema Y*.
 - **Lebenszyklus:** Zwei Statuswerte: `active` (Default bei Anlage) und `completed`. Keine weiteren Zwischenstufen.
 
 ### 2.3 Task (Aufgabe)
 
-- **Rolle:** Operatives Arbeitsobjekt mit Status, optionaler Planung, Bereichszuordnung und ggf. Personenzuordnung oder Terminbezug.
+- **Rolle:** Objekt des **Planning Layer**: konkrete Handlung mit Status, optionaler Planung, Lebensbereich und ggf. Personenzuordnung oder Terminbezug.
 - **Beispiele:** „Nebenkostenabrechnung prüfen", „Arzttermin vereinbaren", „Angebot an Mieter senden".
 - **Abgrenzung:** Ein Task ist kein Ticket, kein Kommunikationsobjekt und kein Ergebnis. Er beschreibt eine zu erledigende Handlung.
 - **Lebenszyklus:** Fünf Statuswerte: `inbox`, `open`, `planned`, `done`, `canceled`. Kein `in_progress`, kein `waiting`. Erlaubte Statuswechsel siehe Section 2.3.1.
@@ -67,22 +83,22 @@ Die Primärobjekte von Leif OS lassen sich in fünf Kategorien einteilen. Die Ka
 
 **Hinweis:** Rückwärtswechsel (z.B. `done` → `open`) sind fachlich nicht vorgesehen und sollten seltene Sonderfälle (Fehleingaben, Korrekturen) bleiben.
 
-### 2.4 Sparring-Chat
+### 2.4 Sparring-Chat (KI-Gespräch)
 
-- **Rolle:** Konkrete Gesprächsinstanz für Analyse, Klärung, Entscheidungsfindung, Strukturierung, Schreibarbeit oder Ableitung von Folgeaktionen.
+- **Rolle:** Konkrete Gesprächsinstanz im **Thinking Layer** – **Denkpartner** für Analyse, Klärung, Entscheidungsfindung, Strukturierung, Priorisierung oder Ableitung von Folgeaktionen (nicht primär „unterhaltendes Chatfenster").
 - **Typen:** Freies Sparring (ohne Kontext), Kontext-Sparring (gestartet aus Task, Inbox-Item, Bereich etc.), Projekt-/Themen-Sparring (innerhalb eines Projekt/Themencontainers).
 - **Abgrenzung:** Der Chatverlauf ist Arbeitsweg, nicht primärer Speicherort. Die eigentlichen Werte sind die strukturierten Outputs (Ergebnisse, Tasks, Entwürfe).
 - **Lebenszyklus:** Kein formales Statusmodell – ein Sparring-Chat kann offen oder abgeschlossen sein.
 
 ### 2.5 Inbox-Item
 
-- **Rolle:** Ungeklärter Eingang aus einer externen Quelle (Telegram, später Kalender, To Do, E-Mail). Übergangsobjekt, das zwingend in ein Folgeobjekt überführt oder verworfen werden muss.
-- **Abgrenzung:** Ein Inbox-Item ist kein dauerhafter Endzustand. Es ist kein Task, kein Ergebnis und kein Kommunikationsarchiv-Eintrag.
-- **Lebenszyklus:** Eingang → Klärung → Überführung in Task / Sparring / Ergebnis / Entwurf / Verwerfen. Zusätzliches Aufmerksamkeitsmerkmal: gelesen/ungelesen (unabhängig von der fachlichen Verarbeitung).
+- **Rolle:** Ungeklärter Eingang im **Input Layer** (z. B. Telegram; perspektivisch weitere Quellen). **Capture- und Review-Objekt:** kurz im System, bis eine **Review-Entscheidung** getroffen wurde.
+- **Abgrenzung:** Kein Mailpostfach, kein Task-Eingangs-Archiv, kein Arbeitsboard und kein dauerhafter Endzustand. Kein Ersatz für einen E-Mail-Client.
+- **Lebenszyklus:** Eingang → **Sichten und bewerten** → Überführung in Task, Sparring, Gedächtnis-Eintrag, Notiz/Entwurf, Kontakt (wenn vorgesehen), Verwerfen/Archivieren oder spätere Sichtung (sobald fachlich unterstützt). Zusätzlich: **gelesen/ungelesen** nur als Aufmerksamkeitsmerkmal, ersetzt keine inhaltliche Entscheidung.
 
-### 2.6 Ergebnis (Oberklasse)
+### 2.6 Ergebnis (Oberklasse) / Gedächtnis-Eintrag
 
-- **Rolle:** Dauerhaft relevantes, strukturiertes Resultat aus Arbeit oder Sparring.
+- **Rolle:** Dauerhaft relevantes, strukturiertes Resultat aus Arbeit oder Sparring – **Langzeitwissen** des Systems („Gedächtnis" in der UI).
 - **Untertypen:**
   - **Erkenntnis** – Was haben wir verstanden?
   - **Entscheidung** – Was wurde verbindlich festgelegt?
@@ -252,3 +268,4 @@ Aus dem Objektmodell ergeben sich direkte Leitplanken für die weitere Arbeit:
 | 2026-04-11 | Person: „Vorerinnerung (Tage vor Geburtstag)" als Eigenschaft ergänzt (Section 4) | Abgleich mit Datenmodell: `birthday_reminder_days` existiert in der `persons`-Tabelle, fehlte im Objektmodell. |
 | 2026-04-11 | Datei-Mindest-Zuordnung: Enforcement-Strategie (Application-Level) explizit dokumentiert | Klarstellung, dass kein DB-Constraint verwendet wird (CHECK über mehrere nullable FKs ist fragil in PostgreSQL). |
 | 2026-04-11 | Inbox-Item: „Referenz auf erzeugtes Folgeobjekt" als Eigenschaft ergänzt (Section 4) | Abgleich mit Datenmodell: `processed_ref_id` existiert in `inbox_items`, fehlte im Objektmodell. |
+| 2026-04-12 | Section 0.1 (drei Ebenen), Kategorien-Tabelle, Bereich/Unterthema/Inbox/KI/Ergebnis-Texte an geschärfte Produktlogik angepasst | Strategie-/Planungs-OS, Input/Thinking/Planning, Mail nicht Kern, Unterthema statt Ordner. |

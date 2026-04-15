@@ -1,3 +1,6 @@
+import { redirect } from "next/navigation";
+
+/** Bereiche werden nur noch unter Einstellungen gepflegt (`/einstellungen#task-bereiche`). */
 export default function BereichePage() {
-  return <h1 className="text-2xl font-semibold tracking-tight">Bereiche</h1>;
+  redirect("/einstellungen#task-bereiche");
 }

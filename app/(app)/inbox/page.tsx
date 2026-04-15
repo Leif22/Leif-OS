@@ -1,6 +1,11 @@
 import { InboxPageClient } from "@/components/inbox/inbox-page-client";
+import { buttonClassName } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
+import { fetchAreasForPage } from "@/lib/areas/fetch-areas-page";
 import { fetchClosedInboxItems, fetchPendingInboxItems } from "@/lib/inbox/fetch-inbox-page";
+import { PRODUCT_LABEL } from "@/lib/product-labels";
 import { createClient } from "@/lib/supabase/server";
+import { fetchTaskTypesForUser } from "@/lib/task-types/fetch-task-types";
 import type { AreaRow } from "@/lib/tasks/types";
 import Link from "next/link";
 
@@ -11,35 +16,40 @@ export default async function InboxPage() {
 
   if (!user) {
     return (
-      <div className="space-y-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
-        <p className="text-zinc-600 dark:text-zinc-400">Bitte melde dich an.</p>
-        <Link
-          href="/login"
-          className="inline-flex rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-        >
+      <div className="space-y-6">
+        <PageHeader title={PRODUCT_LABEL.inbox} />
+        <p className="text-sm text-leif-secondary">Bitte melde dich an.</p>
+        <Link href="/login" className={buttonClassName("primary")}>
           Zur Anmeldung
         </Link>
       </div>
     );
   }
 
-  const [pend, closed, areasRes] = await Promise.all([
+  const [pend, closed, areasRes, taskTypesRes] = await Promise.all([
     fetchPendingInboxItems(supabase, user.id),
     fetchClosedInboxItems(supabase, user.id),
-    supabase.from("areas").select("id, name, sort_order").order("sort_order"),
+    fetchAreasForPage(supabase, user.id),
+    fetchTaskTypesForUser(supabase, user.id),
   ]);
 
-  const areas = (areasRes.data ?? []) as AreaRow[];
-  const areasError = areasRes.error?.message ?? null;
+  const areas: AreaRow[] = areasRes.error
+    ? []
+    : areasRes.areas.map((a) => ({
+        id: a.id,
+        name: a.name,
+        sort_order: a.sort_order,
+      }));
 
   return (
     <InboxPageClient
+      userId={user.id}
       pending={pend.items}
       closed={closed.items}
-      areas={areasError ? [] : areas}
+      areas={areas}
+      taskTypes={taskTypesRes.taskTypes}
       errors={{
-        pending: pend.error,
+        pending: pend.error ?? areasRes.error,
         closed: closed.error,
       }}
     />

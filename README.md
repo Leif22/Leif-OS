@@ -18,7 +18,24 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## KI / Sparring (OpenAI)
+
+Optional in `.env.local`:
+
+- `OPENAI_API_KEY` — wenn gesetzt, speichert die App nach jeder Nutzernachricht im KI-Bereich eine Modellantwort (Server-seitig).
+- `OPENAI_MODEL_DEFAULT` — Chat / KI-Workspace (Sparring); siehe zentrale Konfiguration in `lib/ai/config.ts`.
+- `OPENAI_MODEL_FAST` — für schnelle oder einfache Aufrufe (vorbereitet; gleiche Datei).
+
+Beispiel:
+
+```env
+OPENAI_MODEL_DEFAULT=gpt-4o
+OPENAI_MODEL_FAST=gpt-4o-mini
+```
+
+Ohne Schlüssel bleiben nur deine eigenen Nachrichten gespeichert.
+
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to load and optimize [Inter](https://fonts.google.com/specimen/Inter).
 
 ## Learn More
 

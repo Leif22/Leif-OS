@@ -12,7 +12,10 @@ Dieser Rahmen dient der stabilen Orientierung und wird nicht pro Seite neu aufge
 Auf jeder globalen Seite sind folgende Elemente dauerhaft sichtbar:
 
 1. **Linke Navileiste**  
-   Die linke Seite enthält die globale Hauptnavigation zu den zentralen Maintabs von Leif OS, insbesondere Dashboard, Bereiche, Sparring, Inbox, Tasks, Kalender und Personen.  
+   Die linke Seite enthält die globale Hauptnavigation zu den **Kernbereichen** von Leif OS. **Aktueller Stand** (Gruppierung wie umgesetzt): **Dashboard**; **Lebensbereiche**; **Tasks** und **Kalender**; **Inbox**; **KI**; **Kontakte**; **Notizen** und **Gedächtnis** (technische Routen wie `/bereiche`, `/sparring`, `/personen`, `/ergebnisse` bleiben unverändert).  
+
+   **Fachliche Leitidee** (vgl. `Produkt-Anforderung.md`): Die App denkt in den Ebenen **Input** (z. B. Inbox), **Thinking** (z. B. KI, Lebensbereiche, Gedächtnis, Notizen, Kontakte) und **Planning** (Tasks, Kalender). Es gibt **keine** Mail-UI und keinen Outlook-Posteingang im Produkt; Microsoft-Anbindung dient **nur dem Kalender** (siehe Kalender-Abschnitt).
+
    Die Navigation ist kein Teil des jeweiligen Seiteninhalts, sondern Teil des globalen Rahmens. 
 
 2. **Obere durchgehende Kopfzeile**  
@@ -43,6 +46,8 @@ Sie dient dem schnellen Auffinden relevanter Objekte über Seitenkontexte hinweg
 Für V1 wird die Suche bewusst schlank gehalten.  
 Sie ist als globale Find-Funktion zu verstehen und nicht als bereits voll ausgebautes universelles Befehls-, KI- oder Workflow-Feld. 
 
+Technisch umfasst die Suche u. a. **Tasks, Lebensbereiche (areas), Inbox-Items, Kalendertermine, Notizen, Gedächtnis-Einträge (results), Kontakte und KI-Sparrings (sparring_chats)** (Volltext über relevante Textfelder; Details und Navigation pro Treffertyp → `Implementation-Map.md`, Abschnitt Globale Suche). **Projekte** können aufgenommen werden, sobald die entsprechende Tabelle im Datenmodell produktiv genutzt wird.
+
 ### 1.5 Globaler Plus-Button
 
 Neben der globalen Suche befindet sich ein Plus-Button als immer verfügbare Schnellanlage-Funktion.  
@@ -51,12 +56,14 @@ Der Plus-Button öffnet ein kleines Menü zur Anlage zentraler Objekte, die fach
 Für V1 soll der Plus-Button mindestens folgende Einträge enthalten:
 
 - **Task anlegen** 
-- **Sparring starten** 
-- **Person anlegen** 
+- **KI-Sparring starten** 
+- **Kontakt anlegen** 
 - **Notiz anlegen** 
-- **Ergebnis anlegen** 
+- **Eintrag im Gedächtnis** 
 
-Der Eintrag **Ergebnis anlegen** bezieht sich auf ein strukturiertes Ergebnisobjekt, insbesondere auf **Erkenntnis** oder **Entscheidung**. 
+Es gibt **keinen** Eintrag für E-Mail oder Outlook-Entwurf; Mail ist kein Bestandteil der Oberfläche (vgl. Produkt-Anforderung §2.3).
+
+Der Eintrag **Eintrag im Gedächtnis** bezieht sich auf ein strukturiertes Ergebnisobjekt, insbesondere auf **Erkenntnis** oder **Entscheidung**. 
 
 Kalendereinträge gehören fachlich zum Zielbild und sind in V1 bereits relevant, werden aber nicht als zwingender Standardbestandteil dieses globalen Schnellanlage-Menüs gesetzt, solange der Kalender primär über seine eigene Seite geführt wird. 
 
@@ -66,8 +73,8 @@ Kalendereinträge gehören fachlich zum Zielbild und sind in V1 bereits relevant
 
 ### 2.1 Rolle des Dashboards
 
-Das Dashboard ist die zentrale Start- und Steuerungsseite von Leif OS.  
-Es soll in V1 nicht als beliebige Kachelübersicht funktionieren, sondern als klar priorisierte Arbeits- und Lageansicht für den aktuellen Tag. 
+Das Dashboard ist die zentrale **Start- und Steuerungsseite** von Leif OS.  
+Es beantwortet vor allem: **Was ist heute und diese Woche wirklich relevant?** – und soll in V1 nicht als beliebige Kachelübersicht funktionieren, sondern als **priorisierte Lage- und Entscheidungsansicht** (nicht als zweite Inbox- oder Task-Hauptfläche). 
 
 Ein zentraler Nutzen von Leif OS besteht darin, Priorisierung nicht ständig manuell leisten zu müssen.  
 Das System soll helfen, aus allen offenen Aufgaben die aktuell sinnvollste Aufgabe sichtbar zu machen. 
@@ -181,17 +188,17 @@ Sein zentraler Task-Nutzen liegt in der Anzeige genau **einer empfohlenen nächs
 
 ### 3.1 Rolle der Inbox
 
-Die Inbox ist die zentrale Verarbeitungsseite für neue und ungeklärte Eingänge in Leif OS.  
-Sie dient nicht der langfristigen Ablage, sondern der fachlichen Klärung und Überführung eingehender Informationen in passende Folgeobjekte oder einen Abschluss. 
+Die Inbox ist der zentrale Ort im **Input Layer** für alles, was **neu**, **ungeklärt** oder **noch nicht eingeordnet** ist.  
+Sie ist ein **Capture- und Review-Ort**: sichten, bewerten, entscheiden, zuordnen, in ein Zielobjekt überführen oder verwerfen – **nicht** der Ort für operative Endbearbeitung, **nicht** ein Mailpostfach und **keine** langfristige Ablage („kein Sammelchaos"). 
 
 Die Inbox bündelt Eingänge aus verschiedenen Quellen.  
 In V1 steht mindestens Telegram im Fokus; weitere Quellen wie Kalender, To Do oder E-Mail sind Teil des Zielbilds, aber nicht zwingend vollständig im ersten Ausbau enthalten. 
 
 ### 3.2 Zweck der Seite
 
-Die Inbox beantwortet vor allem die Frage: **„Was ist neu, ungeklärt und muss jetzt eingeordnet werden?“**   
-Sie ist die vollständige Arbeitsseite für Eingangsklärung.  
-Im Unterschied zum Dashboard, auf dem die Inbox nur als priorisierte Arbeitsansicht erscheint, bildet die Inbox-Seite die zentrale Bearbeitungsfläche für alle aktuellen ungeklärten Eingänge. 
+Die Inbox beantwortet vor allem die Frage: **„Was ist neu, ungeklärt und braucht eine klare Review-Entscheidung?“**   
+Sie ist die **vollständige Review-Seite** für Eingangsklärung (nicht die Arbeitsfläche für die spätere operative Erledigung).  
+Im Unterschied zum Dashboard, auf dem die Inbox nur als **Aufmerksamkeits- und Einstiegsignal** erscheint, bildet die Inbox-Seite die zentrale Fläche für alle aktuellen ungeklärten Eingänge. 
 
 ### 3.3 Zentrale Objekte
 
@@ -206,7 +213,7 @@ Dieses Merkmal beschreibt nur, ob ein Eingang bereits gesehen wurde – es erset
 
 ### 3.4 Hauptinhalt der Seite
 
-Die Inbox-Seite besteht fachlich aus einer Arbeitsansicht auf Inbox-Items mit zwei Ebenen:
+Die Inbox-Seite besteht fachlich aus einer **Review-Ansicht** auf Inbox-Items mit zwei Ebenen:
 
 1. **Standardansicht:** ungeklärte Inbox-Items, unabhängig davon, ob sie bereits gelesen wurden.  
 2. **Optionale Einblendung:** bereits verarbeitete bzw. geklärte Inbox-Items, die standardmäßig ausgeblendet sind. 
@@ -219,7 +226,7 @@ Für jedes Inbox-Item sollen mindestens sichtbar sein:
 - der Gelesen-/Ungelesen-Status,
 - ein klarer Satz an Minimalaktionen zur Weiterverarbeitung. 
 
-Die Seite ist damit eine operative Verarbeitungsliste und kein Vollarchiv.  
+Die Seite ist damit eine **Review- und Überführungsliste** und kein Vollarchiv.  
 Tiefere Historisierung, komplexe Metadatenansichten oder aufwendige Batch-Mechaniken gehören nicht zum V1-Kern dieser Seite. 
 
 ### 3.5 Hauptaktionen pro Inbox-Item
@@ -244,8 +251,8 @@ Die Inbox ist keine Ticketmaschine und soll nicht mit Workflow-Zuständen, Deleg
 
 ### 3.6 Verhältnis zum Dashboard
 
-Die Inbox erscheint auch auf dem Dashboard als priorisierte Arbeitsansicht in der mittleren Hauptspalte.  
-Dort ist sie das zentrale operative Werkzeug des Startbildschirms. 
+Die Inbox erscheint auch auf dem Dashboard als **kompakte Aufmerksamkeitsansicht** in der mittleren Hauptspalte.  
+Dort ist sie ein **Startsignal** für neuen Input – nicht die vollständige Review-Oberfläche. 
 
 Auf dem Dashboard werden **nur ungelesene bzw. noch nicht gesehene Inbox-Items** angezeigt.  
 Sobald ein Item als gelesen markiert wurde, verschwindet es aus der Dashboard-Inbox, bleibt aber weiterhin auf der Inbox-Seite sichtbar, solange es fachlich noch nicht verarbeitet wurde. 
@@ -279,6 +286,12 @@ Nicht Ziel von V1 ist,
 - ein Ticketsystem mit vielen Zwischenzuständen und Prozesslogiken nachzubauen. 
 
 Die Inbox bleibt damit in V1 eine fokussierte Klärungs- und Überführungsseite mit einfacher Gelesen-/Ungelesen-Logik. 
+
+### 3.9 E-Mail als späterer Eingang (ohne Mail-UI)
+
+Die frühere Route **`/posteingang`** (Outlook-Inbox-Liste, Entwürfe) ist **entfernt**. Microsoft OAuth und Graph werden **nur** für den **Kalender** (inkl. optionaler Geburtstags-Serien) genutzt, nicht für Mail.
+
+Geplante Weiterleitung von E-Mails in die fachliche **Inbox** (z. B. als `inbox_items` mit strukturierten Daten in `metadata`) ist ein **separater** Integrations-Schritt ohne Mailclient in der UI.
 
 ---
 
@@ -695,8 +708,8 @@ Sie ist damit primär Navigations- und Einstiegsseite, nicht bereits die eigentl
 
 ### 7.4 Bereichsseiten
 
-Jeder Bereich besitzt eine eigene Bereichsseite.  
-Diese Seite bündelt den jeweiligen fachlichen Kontext mit Überblick, Projekten/Themencontainern, bereichsbezogenen Tasks, Ergebnissen, Sparring, relevanten Personen/Dateien sowie Querverbindungen zu anderen Bereichen. 
+Jeder **Lebensbereich** besitzt eine eigene Bereichsseite.  
+Diese Seite ist eine **strategische Arbeitsfläche**: kein Dateibaum, sondern ein **Querschnitt** durch verknüpfte Objekte – Überblick, **Unterthemen** (technisch: Projekte/Themencontainer), bereichsbezogene Tasks, Gedächtnis-Einträge (Ergebnisse), KI-Sparrings, relevante Kontakte, Notizen, Dateien und Termine sowie Querverbindungen zu anderen Bereichen. Optional: Filter oder Gruppierung nach Unterthema statt verschachtelter „Ordner"-Navigation. 
 
 ### 7.5 Verhältnis zu globalen Seiten
 

@@ -2,8 +2,9 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
+import { PRODUCT_COPY } from "@/lib/product-labels";
 import { createClient } from "@/lib/supabase/server";
-import type { TaskPriority, TaskStatus } from "@/lib/tasks/types";
+import type { TaskPriority, TaskType } from "@/lib/tasks/types";
 
 export type RecommendationFeedbackInput = {
   recommended_task_id: string;
@@ -36,69 +37,81 @@ async function insertRecommendationLog(
   return { ok: true };
 }
 
-const STATUS_TRANSITIONS: Partial<Record<TaskStatus, TaskStatus[]>> = {
-  inbox: ["open", "planned", "canceled"],
-  open: ["planned", "done", "canceled"],
-  planned: ["done", "canceled"],
-};
-
-function canChangeStatus(from: TaskStatus, to: TaskStatus): boolean {
-  return STATUS_TRANSITIONS[from]?.includes(to) ?? false;
-}
-
-const STATUSES: TaskStatus[] = ["inbox", "open", "planned", "done", "canceled"];
-const PRIORITIES: TaskPriority[] = ["high", "medium", "low"];
-
-function coerceStatus(s: string): TaskStatus {
-  return STATUSES.includes(s as TaskStatus) ? (s as TaskStatus) : "open";
-}
+const PRIORITIES: TaskPriority[] = ["high", "normal", "low"];
 
 function coercePriority(s: string): TaskPriority {
-  return PRIORITIES.includes(s as TaskPriority) ? (s as TaskPriority) : "medium";
+  return PRIORITIES.includes(s as TaskPriority) ? (s as TaskPriority) : "normal";
 }
 
 export type TaskFormPayload = {
   title: string;
   description: string;
-  area_id: string;
-  status: TaskStatus;
+  task_type: TaskType | null;
   priority: TaskPriority;
-  tagsRaw: string;
-  due_date: string | null;
   planned_date: string | null;
   estimated_minutes: number | null;
+  document_id: string | null;
 };
 
-function parseTags(raw: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const part of raw.split(",")) {
-    const t = part.trim();
-    if (!t) continue;
-    const key = t.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(t);
-  }
-  return out;
+async function assertSparringChatForTask(
+  supabase: SupabaseClient,
+  userId: string,
+  chatId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data, error } = await supabase
+    .from("sparring_chats")
+    .select("id")
+    .eq("id", chatId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: PRODUCT_COPY.errorKiChatMissing };
+  return { ok: true };
 }
 
 function validatePayload(p: TaskFormPayload): string | null {
   if (!p.title.trim()) return "Titel ist Pflichtfeld.";
-  if (!p.area_id) return "Bereich ist Pflichtfeld.";
+  if (p.planned_date && (!p.estimated_minutes || p.estimated_minutes <= 0)) {
+    return "Für geplante Tasks ist die Dauer Pflicht.";
+  }
   return null;
 }
 
 function sanitizePayload(payload: TaskFormPayload): TaskFormPayload {
+  const rawPriority = String(payload.priority);
+  const normalizedPriority = rawPriority === "medium" ? "normal" : rawPriority;
   return {
     ...payload,
-    status: coerceStatus(String(payload.status)),
-    priority: coercePriority(String(payload.priority)),
+    task_type: payload.task_type ? String(payload.task_type).trim() : null,
+    priority: coercePriority(normalizedPriority),
+    document_id: payload.document_id?.trim() || null,
   };
 }
 
+async function resolveTaskTypeForUser(
+  supabase: SupabaseClient,
+  userId: string,
+  taskType: string | null,
+): Promise<string | null> {
+  if (!taskType) return null;
+  const { data } = await supabase
+    .from("user_task_types")
+    .select("key")
+    .eq("user_id", userId)
+    .eq("key", taskType)
+    .maybeSingle();
+  return data ? taskType : null;
+}
+
+export type CreateTaskOptions = {
+  source_sparring_chat_id?: string | null;
+};
+
 export async function createTask(
   payload: TaskFormPayload,
+  options?: CreateTaskOptions,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const p = sanitizePayload(payload);
   const err = validatePayload(p);
@@ -110,20 +123,28 @@ export async function createTask(
     return { ok: false, error: "Nicht angemeldet." };
   }
   const user = userData.user;
-  const tags = parseTags(p.tagsRaw);
+  const taskType = await resolveTaskTypeForUser(supabase, user.id, p.task_type);
+
+  const sparId = options?.source_sparring_chat_id?.trim() || null;
+  if (sparId) {
+    const okSpar = await assertSparringChatForTask(supabase, user.id, sparId);
+    if (!okSpar.ok) return { ok: false, error: okSpar.error };
+  }
 
   const { data: task, error: insertErr } = await supabase
     .from("tasks")
     .insert({
       user_id: user.id,
-      area_id: p.area_id,
+      area_id: null,
       title: p.title.trim(),
       description: p.description.trim() || null,
-      status: p.status,
+      task_type: taskType,
       priority: p.priority,
-      due_date: p.due_date || null,
       planned_date: p.planned_date || null,
       estimated_minutes: p.estimated_minutes,
+      document_id: p.document_id,
+      completed_at: null,
+      source_sparring_chat_id: sparId,
     })
     .select("id")
     .single();
@@ -132,21 +153,9 @@ export async function createTask(
     return { ok: false, error: insertErr?.message ?? "Task konnte nicht angelegt werden." };
   }
 
-  if (tags.length > 0) {
-    const { error: tagErr } = await supabase.from("task_tags").insert(
-      tags.map((tag) => ({
-        user_id: user.id,
-        task_id: task.id,
-        tag,
-      })),
-    );
-    if (tagErr) {
-      return { ok: false, error: tagErr.message };
-    }
-  }
-
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
+  if (sparId) revalidatePath(`/sparring/${sparId}`);
   return { ok: true };
 }
 
@@ -167,10 +176,9 @@ export async function logRecommendationFeedback(
 
 export async function updateTaskStatus(
   taskId: string,
-  newStatus: TaskStatus,
+  newStatus: "done" | "open",
   feedback?: RecommendationFeedbackInput,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const status = coerceStatus(String(newStatus));
   const supabase = await createClient();
   const { data: userData, error: userErr } = await supabase.auth.getUser();
   if (userErr || !userData.user) {
@@ -180,7 +188,7 @@ export async function updateTaskStatus(
 
   const { data: row, error: fetchErr } = await supabase
     .from("tasks")
-    .select("status")
+    .select("completed_at")
     .eq("id", taskId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -189,14 +197,9 @@ export async function updateTaskStatus(
     return { ok: false, error: fetchErr?.message ?? "Task nicht gefunden." };
   }
 
-  const current = coerceStatus(String(row.status));
-  if (!canChangeStatus(current, status)) {
-    return { ok: false, error: "Statuswechsel ist nicht erlaubt." };
-  }
-
   const { error: updErr } = await supabase
     .from("tasks")
-    .update({ status })
+    .update({ completed_at: newStatus === "done" ? new Date().toISOString() : null })
     .eq("id", taskId)
     .eq("user_id", user.id);
 
@@ -232,43 +235,25 @@ export async function updateTask(
     return { ok: false, error: "Nicht angemeldet." };
   }
   const user = userData.user;
-  const tags = parseTags(p.tagsRaw);
+  const taskType = await resolveTaskTypeForUser(supabase, user.id, p.task_type);
 
   const { error: updErr } = await supabase
     .from("tasks")
     .update({
-      area_id: p.area_id,
+      area_id: null,
       title: p.title.trim(),
       description: p.description.trim() || null,
-      status: p.status,
+      task_type: taskType,
       priority: p.priority,
-      due_date: p.due_date || null,
       planned_date: p.planned_date || null,
       estimated_minutes: p.estimated_minutes,
+      document_id: p.document_id,
     })
     .eq("id", taskId)
     .eq("user_id", user.id);
 
   if (updErr) {
     return { ok: false, error: updErr.message };
-  }
-
-  const { error: delErr } = await supabase.from("task_tags").delete().eq("task_id", taskId);
-  if (delErr) {
-    return { ok: false, error: delErr.message };
-  }
-
-  if (tags.length > 0) {
-    const { error: tagErr } = await supabase.from("task_tags").insert(
-      tags.map((tag) => ({
-        user_id: user.id,
-        task_id: taskId,
-        tag,
-      })),
-    );
-    if (tagErr) {
-      return { ok: false, error: tagErr.message };
-    }
   }
 
   if (options?.recommendationFeedback) {
@@ -283,4 +268,44 @@ export async function updateTask(
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
   return { ok: true };
+}
+
+export async function listCreateAreas(): Promise<
+  { ok: true; areas: { id: string; name: string }[] } | { ok: false; error: string }
+> {
+  const supabase = await createClient();
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userData.user) return { ok: false, error: "Nicht angemeldet." };
+
+  const { data, error } = await supabase
+    .from("areas")
+    .select("id,name")
+    .eq("user_id", userData.user.id)
+    .order("name", { ascending: true });
+
+  if (error) return { ok: false, error: error.message };
+  return {
+    ok: true,
+    areas: (data ?? []).map((r) => ({ id: String(r.id), name: String(r.name) })),
+  };
+}
+
+export async function listTaskDocuments(): Promise<
+  { ok: true; documents: { id: string; title: string }[] } | { ok: false; error: string }
+> {
+  const supabase = await createClient();
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userData.user) return { ok: false, error: "Nicht angemeldet." };
+
+  const { data, error } = await supabase
+    .from("documents")
+    .select("id, title")
+    .eq("user_id", userData.user.id)
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) return { ok: false, error: error.message };
+  return {
+    ok: true,
+    documents: (data ?? []).map((d) => ({ id: String(d.id), title: String(d.title ?? "") })),
+  };
 }

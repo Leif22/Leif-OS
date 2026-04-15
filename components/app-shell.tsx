@@ -1,89 +1,99 @@
 "use client";
 
+import type { ReactNode } from "react";
+
+import { LeifOsLogo } from "@/components/brand/leif-os-logo";
+import { GlobalPlusMenu } from "@/components/global-plus-menu";
+import { GlobalSearch } from "@/components/global-search";
+import { HeaderUserAvatar } from "@/components/header-user-avatar";
+import { GlobalCreateHost } from "@/components/global-create-host";
+import { ContentFrame } from "@/components/ui/content-frame";
+import { SidebarNav } from "@/components/sidebar-nav";
+import { SIDEBAR_NAV } from "@/components/sidebar-nav-tokens";
+import { PRODUCT_LABEL } from "@/lib/product-labels";
+import { cn } from "@/lib/cn";
+import { Bell } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
 
-const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/bereiche", label: "Bereiche" },
-  { href: "/sparring", label: "Sparring" },
-  { href: "/inbox", label: "Inbox" },
-  { href: "/tasks", label: "Tasks" },
-  { href: "/kalender", label: "Kalender" },
-  { href: "/personen", label: "Personen" },
-] as const;
-
-const TITLE_BY_PATH: Record<string, string> = Object.fromEntries(
-  NAV_ITEMS.map((item) => [item.href, item.label])
-);
-
-function titleForPath(pathname: string | null): string {
-  if (!pathname) return "Leif OS";
-  const hit = TITLE_BY_PATH[pathname];
-  if (hit) return hit;
-  const prefix = `/${pathname.split("/")[1] ?? ""}`;
-  return TITLE_BY_PATH[prefix] ?? "Leif OS";
-}
-
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const pageTitle = titleForPath(pathname);
+  const router = useRouter();
+
+  useEffect(() => {
+    function onGlobalCreate(ev: Event) {
+      const action = (ev as CustomEvent<{ action?: string }>).detail?.action;
+      if (action === "sparring") router.push("/sparring/neu");
+    }
+    window.addEventListener("leif-global-create", onGlobalCreate);
+    return () => window.removeEventListener("leif-global-create", onGlobalCreate);
+  }, [router]);
 
   return (
-    <div className="grid min-h-full grid-cols-[13.75rem_1fr] grid-rows-[auto_1fr] bg-background text-foreground">
-      <div className="col-span-2 flex h-14 items-stretch border-b border-zinc-200/80 dark:border-zinc-800">
-        <div className="flex w-[13.75rem] shrink-0 items-center border-r border-zinc-200/80 px-4 text-sm font-semibold tracking-tight dark:border-zinc-800">
-          Leif OS
-        </div>
-        <div className="flex min-w-0 flex-1 items-center px-4">
-          <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-3">
-            <div aria-hidden className="min-w-0" />
-            <p className="truncate text-center text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              {pageTitle}
-            </p>
-            <div className="flex min-w-0 items-center justify-end gap-2">
-            <div
-              className="h-9 w-44 max-w-[40vw] rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-xs text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-500"
-              aria-hidden
-              title="Suche (Platzhalter)"
-            />
-            <button
-              type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-md border border-dashed border-zinc-300 text-lg leading-none text-zinc-400 dark:border-zinc-700 dark:text-zinc-500"
-              aria-label="Plus (Platzhalter)"
-            >
-              +
-            </button>
-            </div>
+    <div className="grid min-h-full grid-cols-[240px_1fr] grid-rows-[auto_1fr] bg-leif-canvas text-leif-text">
+      <header className="col-span-2 flex h-16 min-h-16 shrink-0 items-center justify-between gap-4 border-b border-leif-border/35 bg-leif-surface shadow-[0_1px_0_rgba(15,23,42,0.03),0_8px_24px_-12px_rgba(15,23,42,0.06)]">
+        <Link
+          href="/dashboard"
+          className={cn(
+            "grid min-h-16 w-[240px] shrink-0 grid-cols-[22px_minmax(0,1fr)] items-center gap-3 self-stretch px-6 outline-offset-2",
+            "rounded-md outline-none transition-opacity duration-200 ease-out hover:opacity-90 active:opacity-100",
+            "focus-visible:ring-2 focus-visible:ring-leif-primary/25",
+          )}
+        >
+          <span className="inline-flex items-center justify-center">
+            <LeifOsLogo decorative size={40} />
+          </span>
+          <span className="min-w-0 truncate text-[19px] font-semibold leading-none tracking-tight text-neutral-900">
+            Leif OS
+          </span>
+        </Link>
+
+        <div className="flex min-h-16 min-w-0 flex-1 items-center justify-center self-stretch px-4">
+          <div className="flex w-full max-w-[560px] min-w-0 items-center">
+            <GlobalSearch />
           </div>
         </div>
-      </div>
 
-      <nav
-        className="flex flex-col gap-0.5 border-r border-zinc-200/80 p-2 dark:border-zinc-800"
-        aria-label="Hauptnavigation"
+        <div className="flex min-h-16 shrink-0 items-center gap-4 self-stretch pr-6">
+          <GlobalPlusMenu />
+          <Link
+            href="/inbox"
+            className={cn(
+              "flex size-9 shrink-0 items-center justify-center rounded-lg border border-leif-border bg-leif-surface text-leif-secondary shadow-leif",
+              "transition-[color,background-color,border-color,box-shadow,transform] duration-200 ease-out",
+              "hover:border-leif-border hover:bg-leif-divider hover:text-leif-text hover:shadow-[0_1px_2px_rgba(15,23,42,0.05)]",
+              "active:scale-[0.98] active:bg-[#ebecef] active:shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-leif-primary/20",
+            )}
+            aria-label={PRODUCT_LABEL.inbox}
+            title={PRODUCT_LABEL.inbox}
+          >
+            <Bell className="size-[18px]" strokeWidth={1.75} aria-hidden />
+          </Link>
+          <HeaderUserAvatar />
+        </div>
+      </header>
+
+      <aside
+        className={cn(
+          "flex min-h-0 flex-col border-r border-[#E5E7EB] bg-[#FAFAFA] px-3",
+          "font-sans antialiased",
+        )}
+        style={{
+          paddingTop: SIDEBAR_NAV.asidePaddingTopPx,
+          paddingBottom: SIDEBAR_NAV.asidePaddingBottomPx,
+        }}
       >
-        {NAV_ITEMS.map((item) => {
-          const active =
-            pathname === item.href ||
-            (item.href !== "/dashboard" && pathname?.startsWith(`${item.href}/`));
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`rounded-md px-3 py-2 text-sm transition-colors ${
-                active
-                  ? "bg-zinc-200/80 font-medium text-zinc-950 dark:bg-zinc-800 dark:text-zinc-50"
-                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
-              }`}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
+        <div className="min-h-0 overflow-y-auto">
+          <SidebarNav pathname={pathname} />
+        </div>
+      </aside>
 
-      <main className="min-h-0 overflow-auto p-6">{children}</main>
+      <main className="min-h-0 overflow-auto bg-leif-canvas">
+        <ContentFrame>{children}</ContentFrame>
+      </main>
+      <GlobalCreateHost />
     </div>
   );
 }
