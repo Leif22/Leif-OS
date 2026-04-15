@@ -1,5 +1,6 @@
 import { DashboardContextSidebar } from "@/components/dashboard/dashboard-context-sidebar";
 import { DashboardInboxClient } from "@/components/dashboard/dashboard-inbox-client";
+import { DashboardReviewClient } from "@/components/dashboard/dashboard-review-client";
 import { PageHeader } from "@/components/ui/page-header";
 import { fetchTodayDashboardData } from "@/lib/dashboard/fetch-today-dashboard";
 import { fetchPendingDashboardInbox } from "@/lib/inbox/fetch-pending-dashboard-inbox";
@@ -53,16 +54,22 @@ export default async function DashboardPage() {
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] lg:gap-8">
         <div className="min-w-0">
-          <DashboardInboxClient
-            userId={user.id}
-            items={inbox.items}
-            progress={inbox.progress}
-            areas={areas}
-            taskTypes={taskTypesRes.taskTypes}
-            loadError={inbox.error}
-            areasLoadError={areasRes.error}
-            openCount={openCount}
-          />
+          <div className="space-y-4">
+            <DashboardReviewClient
+              tasks={today.reviewTasks}
+              loadError={today.errors.reviewTasks}
+            />
+            <DashboardInboxClient
+              userId={user.id}
+              items={inbox.items}
+              progress={inbox.progress}
+              areas={areas}
+              taskTypes={taskTypesRes.taskTypes}
+              loadError={inbox.error}
+              areasLoadError={areasRes.error}
+              openCount={openCount}
+            />
+          </div>
         </div>
 
         <DashboardContextSidebar data={today} />

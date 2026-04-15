@@ -21,7 +21,7 @@ export function InboxAutoRefresh({ userId }: { userId: string }) {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         debounceRef.current = null;
-        router.refresh();
+        void Promise.resolve(router.refresh()).catch(() => {});
       }, DEBOUNCE_MS);
     };
 

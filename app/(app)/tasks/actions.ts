@@ -4,6 +4,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { PRODUCT_COPY } from "@/lib/product-labels";
 import { createClient } from "@/lib/supabase/server";
+import { addBerlinCalendarDays } from "@/lib/calendar/berlin-ymd";
+import { todayYmdInRecommendationTz } from "@/lib/tasks/recommended";
 import type { TaskPriority, TaskType } from "@/lib/tasks/types";
 
 export type RecommendationFeedbackInput = {
@@ -294,6 +296,123 @@ export async function updateTask(
 
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+type QuickActionResult = { ok: true } | { ok: false; error: string };
+
+function revalidateTaskSurfaces() {
+  revalidatePath("/tasks");
+  revalidatePath("/dashboard");
+  revalidatePath("/planer");
+}
+
+/** Schnellaktion Liste / Review: als erledigt markieren. */
+export async function quickTaskMarkDone(taskId: string): Promise<QuickActionResult> {
+  const supabase = await createClient();
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userData.user) return { ok: false, error: "Nicht angemeldet." };
+  const { error } = await supabase
+    .from("tasks")
+    .update({ completed_at: new Date().toISOString(), status: "done" })
+    .eq("id", taskId)
+    .eq("user_id", userData.user.id)
+    .is("completed_at", null);
+  if (error) return { ok: false, error: error.message };
+  revalidateTaskSurfaces();
+  return { ok: true };
+}
+
+/** Planung + Fälligkeit auf heute (Berlin-Kalendertag). */
+export async function quickTaskMoveToToday(taskId: string): Promise<QuickActionResult> {
+  const supabase = await createClient();
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userData.user) return { ok: false, error: "Nicht angemeldet." };
+  const today = todayYmdInRecommendationTz();
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      completed_at: null,
+      planned_date: today,
+      due_date: today,
+      status: "planned",
+    })
+    .eq("id", taskId)
+    .eq("user_id", userData.user.id);
+  if (error) return { ok: false, error: error.message };
+  revalidateTaskSurfaces();
+  return { ok: true };
+}
+
+/** Planung + Fälligkeit auf morgen; optional Wiedereröffnen aus Erledigt. */
+export async function quickTaskMoveToTomorrow(taskId: string): Promise<QuickActionResult> {
+  const supabase = await createClient();
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userData.user) return { ok: false, error: "Nicht angemeldet." };
+  const tomorrow = addBerlinCalendarDays(todayYmdInRecommendationTz(), 1);
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      completed_at: null,
+      planned_date: tomorrow,
+      due_date: tomorrow,
+      status: "planned",
+    })
+    .eq("id", taskId)
+    .eq("user_id", userData.user.id);
+  if (error) return { ok: false, error: error.message };
+  revalidateTaskSurfaces();
+  return { ok: true };
+}
+
+/** Planung entfernen, in Inbox; Task wieder offen. */
+export async function quickTaskToInbox(taskId: string): Promise<QuickActionResult> {
+  const supabase = await createClient();
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userData.user) return { ok: false, error: "Nicht angemeldet." };
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      planned_date: null,
+      due_date: null,
+      status: "inbox",
+      completed_at: null,
+    })
+    .eq("id", taskId)
+    .eq("user_id", userData.user.id);
+  if (error) return { ok: false, error: error.message };
+  revalidateTaskSurfaces();
+  return { ok: true };
+}
+
+/** Neu planen: konkretes Datum setzen (Kalendertag Berlin). */
+export async function quickTaskReplan(
+  taskId: string,
+  plannedYmd: string,
+  dueYmd?: string | null,
+): Promise<QuickActionResult> {
+  const planned = String(plannedYmd ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(planned)) {
+    return { ok: false, error: "Bitte ein gültiges Datum wählen." };
+  }
+  const dueRaw = String(dueYmd ?? "").trim();
+  const due = dueRaw && /^\d{4}-\d{2}-\d{2}$/.test(dueRaw) ? dueRaw : planned;
+
+  const supabase = await createClient();
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userData.user) return { ok: false, error: "Nicht angemeldet." };
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      completed_at: null,
+      planned_date: planned,
+      due_date: due,
+      status: "planned",
+    })
+    .eq("id", taskId)
+    .eq("user_id", userData.user.id);
+  if (error) return { ok: false, error: error.message };
+  revalidateTaskSurfaces();
   return { ok: true };
 }
 

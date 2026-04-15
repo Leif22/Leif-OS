@@ -1,45 +1,19 @@
 "use client";
 
-import {
-  logRecommendationFeedback,
-  updateTaskStatus,
-  type RecommendationFeedbackInput,
-} from "@/app/(app)/tasks/actions";
+import { updateTaskStatus, type RecommendationFeedbackInput } from "@/app/(app)/tasks/actions";
 import { AlertBanner } from "@/components/ui/alert-banner";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
-import { SectionTitle } from "@/components/ui/page-header";
-import { StatusChip } from "@/components/ui/status-chip";
-import { taskPriorityChipTone, taskStatusChipTone } from "@/lib/tasks/chip-tones";
 import type { TaskTypeRow } from "@/lib/task-types/defaults";
 import type { RecommendationBreakdown } from "@/lib/tasks/recommended";
+import { todayYmdInRecommendationTz } from "@/lib/tasks/recommended";
+import { formatTaskMetaLine } from "@/lib/tasks/task-meta-line";
 import type { AreaRow, TaskWithRelations } from "@/lib/tasks/types";
-import { TASK_PRIORITIES, TASK_STATUSES } from "@/lib/tasks/types";
 import { ListTodo } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { TaskCompleteToggle } from "./task-complete-toggle";
 import { TaskFormDialog } from "./task-form-dialog";
-
-function formatDate(iso: string | null): string {
-  if (!iso) return "—";
-  const [y, m, d] = iso.split("-").map(Number);
-  if (!y || !m || !d) return iso;
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("de-DE", {
-    timeZone: "UTC",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
-function statusLabel(s: string): string {
-  return TASK_STATUSES.find((x) => x.value === s)?.label ?? s;
-}
-
-function priorityLabel(p: string): string {
-  return TASK_PRIORITIES.find((x) => x.value === p)?.label ?? p;
-}
+import { cn } from "@/lib/cn";
 
 function acceptedFeedback(
   taskId: string,
@@ -64,6 +38,8 @@ type Props = {
   projects?: { id: string; name: string }[];
   recommendationError?: string | null;
   heading?: string;
+  /** Wenn gesetzt: Klick öffnet das Seitenpanel statt Dialog (Task-Seite). */
+  onOpenTaskInPanel?: (task: TaskWithRelations) => void;
 };
 
 export function RecommendedTaskBlock({
@@ -74,51 +50,68 @@ export function RecommendedTaskBlock({
   projects = [],
   recommendationError,
   heading = "Empfohlene Aufgabe",
+  onOpenTaskInPanel,
 }: Props) {
   const router = useRouter();
+  const todayYmd = useMemo(() => todayYmdInRecommendationTz(), []);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [optimisticDone, setOptimisticDone] = useState<boolean | null>(null);
 
   const feedbackAccepted = task && breakdown ? acceptedFeedback(task.id, breakdown) : null;
 
-  async function runStatus(newStatus: "done" | "open") {
-    if (!task || !feedbackAccepted) return;
-    setActionError(null);
-    setPending(true);
-    try {
-      const res = await updateTaskStatus(task.id, newStatus, feedbackAccepted);
-      if (!res.ok) setActionError(res.error);
-      else router.refresh();
-    } finally {
-      setPending(false);
-    }
+  useEffect(() => {
+    setOptimisticDone(null);
+  }, [task?.id, task?.completed_at]);
+
+  const displayDone =
+    optimisticDone !== null ? optimisticDone : Boolean(task?.completed_at);
+
+  const recommendedMeta = useMemo(() => {
+    if (!task) return null;
+    const tl = taskTypes?.find((x) => x.key === task.task_type)?.label ?? "—";
+    return formatTaskMetaLine(task, tl, todayYmd);
+  }, [task, taskTypes, todayYmd]);
+
+  function openTask() {
+    if (!task || pending) return;
+    if (onOpenTaskInPanel) onOpenTaskInPanel(task);
+    else setDialogOpen(true);
   }
 
-  async function runSkip() {
-    if (!task || !breakdown) return;
+  async function handleCompleteToggle(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!task || !feedbackAccepted || pending) return;
+    const next = !displayDone;
+    setOptimisticDone(next);
     setActionError(null);
     setPending(true);
     try {
-      const res = await logRecommendationFeedback({
-        recommended_task_id: task.id,
-        score: breakdown.score,
-        score_priority: breakdown.score_priority,
-        score_due: breakdown.score_due,
-        score_today: breakdown.score_today,
-        score_age: breakdown.score_age,
-        action: "skipped",
-      });
-      if (!res.ok) setActionError(res.error);
-      else router.refresh();
+      const res = await updateTaskStatus(
+        task.id,
+        next ? "done" : "open",
+        next ? feedbackAccepted : undefined,
+      );
+      if (!res.ok) {
+        setActionError(res.error);
+        setOptimisticDone(null);
+      } else {
+        void Promise.resolve(router.refresh()).catch(() => {});
+      }
     } finally {
       setPending(false);
     }
   }
 
   return (
-    <section className="space-y-4" aria-labelledby="recommended-task-heading">
-      <SectionTitle id="recommended-task-heading">{heading}</SectionTitle>
+    <section className="space-y-2.5" aria-labelledby="recommended-task-heading">
+      <h2
+        id="recommended-task-heading"
+        className="text-xs font-semibold uppercase tracking-wide text-leif-muted"
+      >
+        {heading}
+      </h2>
 
       {recommendationError ? (
         <AlertBanner variant="error">Empfehlung konnte nicht geladen werden: {recommendationError}</AlertBanner>
@@ -127,54 +120,59 @@ export function RecommendedTaskBlock({
       {actionError ? <AlertBanner variant="error">{actionError}</AlertBanner> : null}
 
       {!recommendationError && !task ? (
-        <EmptyState
-          illustration={<ListTodo />}
-          title="Keine empfohlene Aufgabe"
-          description='Keine offenen Tasks – oder es gibt aktuell nichts zu empfehlen. Lege Tasks an oder setze den Status auf "Offen".'
-        />
+        <div className="flex items-start gap-2 rounded-lg border border-dashed border-leif-border/90 bg-white px-3 py-2">
+          <ListTodo className="mt-0.5 size-4 shrink-0 text-leif-muted" aria-hidden />
+          <p className="text-[12px] leading-snug text-leif-secondary">
+            Keine empfohlene Aufgabe — nichts zu empfehlen oder keine passenden offenen Tasks.
+          </p>
+        </div>
       ) : null}
 
       {task && breakdown ? (
-        <Card className="p-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0 flex-1 space-y-3">
-              <h3 className="text-[16px] font-semibold leading-snug tracking-tight text-leif-text">{task.title}</h3>
-              <div className="flex flex-wrap gap-2">
-                <StatusChip tone={taskPriorityChipTone(task.priority)}>{priorityLabel(task.priority)}</StatusChip>
-                <StatusChip tone={taskStatusChipTone(task.status)}>{statusLabel(task.status)}</StatusChip>
-              </div>
-              <div className="space-y-1 text-[13px] text-leif-secondary">
-                <p>
-                  Geplant: <span className="tabular-nums text-leif-text">{formatDate(task.planned_date)}</span>
-                </p>
-              </div>
-            </div>
-            <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={() => setDialogOpen(true)}>
-              Bearbeiten
-            </Button>
+        <div className="group -mx-2 rounded-xl px-2 py-0.5 transition-[background-color] duration-200 hover:bg-leif-primary-soft/50 lg:-mx-4 lg:px-4">
+          <Card
+            className={cn(
+              "rounded-xl border border-leif-primary/20 bg-leif-primary/[0.04] px-3.5 py-3.5 shadow-sm transition-[border-color,box-shadow] duration-200",
+              "group-hover:border-leif-primary/30 group-hover:shadow-md",
+              displayDone && "opacity-[0.78]",
+            )}
+          >
+          <div className="flex gap-3">
+            <TaskCompleteToggle
+              done={displayDone}
+              disabled={pending}
+              onClick={handleCompleteToggle}
+              size="md"
+            />
+            <button
+              type="button"
+              disabled={pending}
+              onClick={openTask}
+              aria-label={`${task.title} öffnen`}
+              className={cn(
+                "min-w-0 flex-1 rounded-lg px-1 py-0.5 text-left transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-leif-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                pending && "pointer-events-none opacity-60",
+              )}
+            >
+              <h3
+                className={cn(
+                  "line-clamp-3 text-[15px] font-semibold leading-snug text-leif-text",
+                  displayDone && "text-leif-muted line-through decoration-leif-muted/80",
+                )}
+              >
+                {task.title}
+              </h3>
+              {recommendedMeta ? (
+                <p className="mt-1.5 text-[13px] leading-snug text-leif-muted">{recommendedMeta}</p>
+              ) : null}
+            </button>
           </div>
-
-          <div className="mt-6 flex flex-wrap gap-2 border-t border-leif-divider pt-5">
-            {task.status !== "erledigt" ? (
-              <>
-                <Button type="button" variant="primary" size="sm" disabled={pending} onClick={() => runStatus("done")}>
-                  Erledigt
-                </Button>
-                <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={() => runStatus("open")}>
-                  Wieder offen
-                </Button>
-              </>
-            ) : null}
-            <div className="flex basis-full justify-end pt-1">
-              <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => runSkip()}>
-                Nicht dieser Task
-              </Button>
-            </div>
-          </div>
-        </Card>
+          </Card>
+        </div>
       ) : null}
 
-      {task && feedbackAccepted ? (
+      {task && feedbackAccepted && !onOpenTaskInPanel ? (
         <TaskFormDialog
           open={dialogOpen}
           mode="edit"

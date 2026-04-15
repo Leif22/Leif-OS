@@ -39,7 +39,7 @@ export type TaskWithRelations = TaskRow & {
 };
 
 export const TASK_STATUSES: { value: TaskDerivedStatus; label: string }[] = [
-  { value: "inbox", label: "Inbox" },
+  { value: "inbox", label: "Ohne Termin" },
   { value: "geplant", label: "Geplant" },
   { value: "erledigt", label: "Erledigt" },
 ];

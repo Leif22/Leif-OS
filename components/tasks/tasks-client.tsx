@@ -1,50 +1,60 @@
 "use client";
 
-import {
-  PRIORITY_ORDER,
-  TASK_PRIORITIES,
-} from "@/lib/tasks/types";
 import type { RecommendationFeedbackInput } from "@/app/(app)/tasks/actions";
+import {
+  quickTaskMarkDone,
+  quickTaskMoveToToday,
+  quickTaskMoveToTomorrow,
+  updateTaskStatus,
+} from "@/app/(app)/tasks/actions";
 import { PRODUCT_COPY, PRODUCT_LABEL } from "@/lib/product-labels";
 import type { SparringTaskDraft } from "@/lib/sparring/task-draft";
 import type { TaskTypeRow } from "@/lib/task-types/defaults";
 import type { RecommendationBreakdown } from "@/lib/tasks/recommended";
+import {
+  buildTaskTypeGroups,
+  orderedTaskTypeGroupLabels,
+  taskTypeGroupMetaLine,
+} from "@/lib/tasks/group-tasks-by-type";
+import {
+  countTasksForFilter,
+  filterTasksBySmartFilter,
+  type TaskSmartFilter,
+  sortTasksForSmartFilter,
+  TASK_SMART_FILTER_OPTIONS,
+} from "@/lib/tasks/task-filters";
+import { todayYmdInRecommendationTz } from "@/lib/tasks/recommended";
 import type { AreaRow, TaskWithRelations } from "@/lib/tasks/types";
-import { taskPriorityChipTone } from "@/lib/tasks/chip-tones";
+import { cn } from "@/lib/cn";
+import {
+  AlertTriangle,
+  Calendar,
+  CalendarClock,
+  CalendarDays,
+  CheckCircle2,
+  LayoutGrid,
+} from "lucide-react";
+import {
+  applyTaskEditorValueToTask,
+  type TaskEditorValue,
+} from "@/components/tasks/task-editor";
 import { RecommendedTaskBlock } from "./recommended-task-block";
-import { TaskFormDialog } from "./task-form-dialog";
-import { TaskInlineEditor } from "./task-inline-editor";
-import { Fragment, useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { PageHeader } from "@/components/ui/page-header";
+import { TaskDetailPanel } from "./task-detail-panel";
+import { TaskRowCard } from "./task-row-card";
+import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
-import { FilterBar, FilterField } from "@/components/ui/filter-bar";
-import { TableShell } from "@/components/ui/table-shell";
-import { StatusChip } from "@/components/ui/status-chip";
-import { controlClass } from "@/components/ui/control-styles";
+import { PageHeader } from "@/components/ui/page-header";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type SortMode = "due_asc" | "due_desc" | "priority";
-
-function formatDate(iso: string | null): string {
-  if (!iso) return "—";
-  const [y, m, d] = iso.split("-").map(Number);
-  if (!y || !m || !d) return iso;
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("de-DE", {
-    timeZone: "UTC",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
-function dueSortKey(iso: string | null, nullLast: boolean): number {
-  if (!iso) return nullLast ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
-  return new Date(`${iso}T00:00:00Z`).getTime();
-}
-
-function priorityLabel(p: string): string {
-  return TASK_PRIORITIES.find((x) => x.value === p)?.label ?? p;
-}
+const FILTER_ICONS: Record<TaskSmartFilter, typeof Calendar> = {
+  heute: Calendar,
+  morgen: CalendarClock,
+  ueberfaellig: AlertTriangle,
+  geplant: CalendarDays,
+  erledigt: CheckCircle2,
+  alle: LayoutGrid,
+};
 
 type Props = {
   tasks: TaskWithRelations[];
@@ -54,7 +64,6 @@ type Props = {
   projects: { id: string; name: string }[];
   recommended: { task: TaskWithRelations; breakdown: RecommendationBreakdown } | null;
   recommendedError: string | null;
-  /** Serverseitig aus `?from_sparring=` gebaut; nach URL-Clear im Client weiter genutzt */
   sparringTaskDraft: SparringTaskDraft | null;
 };
 
@@ -87,120 +96,235 @@ export function TasksClient({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const [priorityFilter, setPriorityFilter] = useState<string>("");
-  const [sortMode, setSortMode] = useState<SortMode>("due_asc");
+  const todayYmd = useMemo(() => todayYmdInRecommendationTz(), []);
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
-  const [editingTask, setEditingTask] = useState<TaskWithRelations | null>(null);
-  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<TaskSmartFilter>("heute");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [panelCreate, setPanelCreate] = useState(false);
   const [editRecommendationFeedback, setEditRecommendationFeedback] =
     useState<RecommendationFeedbackInput | null>(null);
   const [sparPersist, setSparPersist] = useState<SparringTaskDraft | null>(null);
-  const [createAreaPrefill, setCreateAreaPrefill] = useState<string | null>(null);
 
-  // Sync dialog state from URL query once after navigation (Next.js clears query in same tick).
-  /* eslint-disable react-hooks/set-state-in-effect -- intentional URL→dialog hydration */
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  /** Live-Vorschau für die Liste, solange ein Task im Panel bearbeitet wird. */
+  const [panelDraft, setPanelDraft] = useState<TaskEditorValue | null>(null);
+  const [groupByType, setGroupByType] = useState(false);
+
+  const groupByTypeDescId = "tasks-group-by-type-desc";
+  const typeGroupQuickOrder = useMemo(() => {
+    const labels = orderedTaskTypeGroupLabels(taskTypes);
+    const tail = "Ohne Art";
+    if (labels.length === 0) {
+      return `${tail} und ggf. weitere Gruppen nach Schlüsseln aus den Tasks (Einstellungen → Task-Arten).`;
+    }
+    return [...labels, tail].join(" · ");
+  }, [taskTypes]);
+
+  const groupByTypeHintTitle = useMemo(() => {
+    const labels = orderedTaskTypeGroupLabels(taskTypes);
+    if (labels.length === 0) {
+      return "Gruppierung nach in Tasks vorkommenden Arten-Schlüsseln, zuletzt Ohne Art. Lege Arten unter Einstellungen fest.";
+    }
+    return `Aktuelle Arten aus den Einstellungen (Reihenfolge): ${labels.join(", ")}, zuletzt Ohne Art. Veraltete Task-Schlüssel erscheinen als eigene Gruppe.`;
+  }, [taskTypes]);
+
+  const refreshTypesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const scheduleRefresh = () => {
+      if (refreshTypesDebounceRef.current) clearTimeout(refreshTypesDebounceRef.current);
+      refreshTypesDebounceRef.current = setTimeout(() => {
+        refreshTypesDebounceRef.current = null;
+        void Promise.resolve(router.refresh()).catch(() => {});
+      }, 400);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") scheduleRefresh();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (refreshTypesDebounceRef.current) clearTimeout(refreshTypesDebounceRef.current);
+    };
+  }, [router]);
+
+  const filteredSorted = useMemo(() => {
+    const f = filterTasksBySmartFilter(tasks, filter, todayYmd);
+    return sortTasksForSmartFilter(f, filter);
+  }, [tasks, filter, todayYmd]);
+
+  const listTasks = useMemo(() => {
+    if (!recommended?.task) return filteredSorted;
+    return filteredSorted.filter((t) => t.id !== recommended.task.id);
+  }, [filteredSorted, recommended]);
+
+  const taskGroups = useMemo(() => {
+    const ohneTermin = listTasks.filter((t) => !t.completed_at && !t.planned_date);
+    const geplant = listTasks.filter((t) => !t.completed_at && t.planned_date);
+    const erledigt = listTasks.filter((t) => t.completed_at);
+    return [
+      {
+        key: "ohneTermin" as const,
+        label: "Ohne Termin",
+        items: ohneTermin,
+        gap: "space-y-2" as const,
+      },
+      { key: "geplant" as const, label: "Geplant", items: geplant, gap: "space-y-1.5" as const },
+      { key: "erledigt" as const, label: "Erledigt", items: erledigt, gap: "space-y-1.5" as const },
+    ].filter((g) => g.items.length > 0);
+  }, [listTasks]);
+
+  const handlePanelDraftChange = useCallback((d: TaskEditorValue) => {
+    setPanelDraft(d);
+  }, []);
+
+  useEffect(() => {
+    setPanelDraft(null);
+  }, [selectedId, panelCreate]);
+
+  const selectedTask = useMemo(
+    () => (selectedId ? tasks.find((t) => t.id === selectedId) ?? null : null),
+    [tasks, selectedId],
+  );
+
+  const detailOpen = panelCreate || selectedId != null;
+
+  useEffect(() => {
+    if (selectedId && !tasks.some((t) => t.id === selectedId)) {
+      setSelectedId(null);
+      setEditRecommendationFeedback(null);
+    }
+  }, [tasks, selectedId]);
+
+  /* eslint-disable react-hooks/set-state-in-effect -- URL → Panel */
   useEffect(() => {
     const wantNew = searchParams.get("new") === "1";
     const fromSparring = searchParams.get("from_sparring");
     const fromSparringMessage = searchParams.get("from_sparring_message");
     const taskId = searchParams.get("task");
-    const areaId = searchParams.get("area");
-    if (!wantNew && !taskId && !areaId && !fromSparring && !fromSparringMessage) return;
+    if (!wantNew && !taskId && !fromSparring && !fromSparringMessage) return;
 
     if (wantNew && (fromSparring || fromSparringMessage)) {
-      setCreateAreaPrefill(null);
-      setDialogMode("create");
-      setEditingTask(null);
-      setEditRecommendationFeedback(null);
       setSparPersist(sparringTaskDraft);
-      setDialogOpen(true);
-    } else if (wantNew) {
-      const a = searchParams.get("area");
-      setCreateAreaPrefill(a && areas.some((ar) => ar.id === a) ? a : null);
-      setSparPersist(null);
-      setDialogMode("create");
-      setEditingTask(null);
+      setPanelCreate(true);
+      setSelectedId(null);
       setEditRecommendationFeedback(null);
-      setDialogOpen(true);
+    } else if (wantNew) {
+      setSparPersist(null);
+      setPanelCreate(true);
+      setSelectedId(null);
+      setEditRecommendationFeedback(null);
     }
 
     if (taskId) {
       const t = tasks.find((x) => x.id === taskId);
       if (t) {
-        setDialogMode("edit");
-        setEditingTask(t);
-        setExpandedTaskId(t.id);
+        setPanelCreate(false);
+        setSelectedId(t.id);
         if (recommended && t.id === recommended.task.id) {
           setEditRecommendationFeedback(acceptedFeedback(t.id, recommended.breakdown));
         } else {
           setEditRecommendationFeedback(null);
         }
-        setDialogOpen(false);
       }
     }
 
-    if (areaId) void areaId;
-
     router.replace(pathname, { scroll: false });
-  }, [searchParams, tasks, areas, recommended, pathname, router, sparringTaskDraft]);
+  }, [searchParams, tasks, recommended, pathname, router, sparringTaskDraft]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const filteredSorted = useMemo(() => {
-    let list = tasks.slice();
-    if (priorityFilter) list = list.filter((t) => t.priority === priorityFilter);
-
-    list.sort((a, b) => {
-      if (sortMode === "due_asc") {
-        const ka = dueSortKey(a.due_date, true);
-        const kb = dueSortKey(b.due_date, true);
-        if (ka !== kb) return ka - kb;
-      }
-      if (sortMode === "due_desc") {
-        const ka = dueSortKey(a.due_date, false);
-        const kb = dueSortKey(b.due_date, false);
-        if (ka !== kb) return kb - ka;
-      }
-      if (sortMode === "priority") {
-        const pa = PRIORITY_ORDER[a.priority];
-        const pb = PRIORITY_ORDER[b.priority];
-        if (pa !== pb) return pa - pb;
-      }
-      return a.title.localeCompare(b.title, "de");
-    });
-    return list;
-  }, [tasks, priorityFilter, sortMode]);
+  function closeDetail() {
+    setPanelCreate(false);
+    setSelectedId(null);
+    setEditRecommendationFeedback(null);
+    setSparPersist(null);
+  }
 
   function openCreate() {
-    setCreateAreaPrefill(null);
     setSparPersist(null);
-    setDialogMode("create");
-    setEditingTask(null);
+    setSelectedId(null);
     setEditRecommendationFeedback(null);
-    setDialogOpen(true);
+    setPanelCreate(true);
   }
 
-  function toggleInlineEdit(t: TaskWithRelations) {
-    setExpandedTaskId((current) => (current === t.id ? null : t.id));
-    setEditingTask(t);
+  function selectTask(id: string) {
+    setPanelCreate(false);
+    setSelectedId(id);
+    if (recommended && id === recommended.task.id) {
+      setEditRecommendationFeedback(acceptedFeedback(id, recommended.breakdown));
+    } else {
+      setEditRecommendationFeedback(null);
+    }
   }
 
-  function closeDialog() {
-    setDialogOpen(false);
-    setCreateAreaPrefill(null);
-    setEditingTask(null);
-    setEditRecommendationFeedback(null);
-    setSparPersist(null);
+  function openRecommendedInPanel(t: TaskWithRelations) {
+    selectTask(t.id);
   }
 
-  const selectClass = `${controlClass} min-w-0`;
+  async function runListAction(taskId: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
+    setListError(null);
+    setBusyId(taskId);
+    try {
+      const res = await fn();
+      if (!res.ok) {
+        setListError(res.error ?? "Aktion fehlgeschlagen.");
+        return false;
+      }
+      void Promise.resolve(router.refresh()).catch(() => {});
+      return true;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setListError(
+        msg === "Failed to fetch" || msg.includes("Load failed")
+          ? "Verbindung zum Server fehlgeschlagen."
+          : msg,
+      );
+      return false;
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function typeLabel(task: TaskWithRelations): string {
+    return taskTypes.find((x) => x.key === task.task_type)?.label ?? "—";
+  }
+
+  function taskForRow(t: TaskWithRelations): TaskWithRelations {
+    if (panelCreate || selectedId !== t.id || !panelDraft) return t;
+    return applyTaskEditorValueToTask(t, panelDraft);
+  }
+
+  async function toggleTaskComplete(task: TaskWithRelations, willBeDone: boolean): Promise<boolean> {
+    if (willBeDone) {
+      return runListAction(task.id, () => quickTaskMarkDone(task.id));
+    }
+    return runListAction(task.id, () => updateTaskStatus(task.id, "open"));
+  }
+
+  function taskRowLi(t: TaskWithRelations) {
+    const row = taskForRow(t);
+    return (
+      <li key={t.id}>
+        <TaskRowCard
+          task={row}
+          typeLabel={typeLabel(row)}
+          todayYmd={todayYmd}
+          selected={selectedId === t.id && !panelCreate}
+          busy={busyId === t.id}
+          onSelect={() => selectTask(t.id)}
+          onToggleComplete={(willBeDone) => toggleTaskComplete(t, willBeDone)}
+          onQuickToday={() => runListAction(t.id, () => quickTaskMoveToToday(t.id))}
+          onQuickTomorrow={() => runListAction(t.id, () => quickTaskMoveToTomorrow(t.id))}
+        />
+      </li>
+    );
+  }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <PageHeader
         title={PRODUCT_LABEL.tasks}
-        description="Planungsorientierte Liste für schnelle Task-Anpassungen."
+        description="Steuerzentrale: filtern, verschieben, erledigen — Fokus auf Planung."
         actions={
           <Button type="button" onClick={openCreate}>
             {PRODUCT_COPY.plusMenuTask}
@@ -208,117 +332,198 @@ export function TasksClient({
         }
       />
 
-      <RecommendedTaskBlock
-        task={recommended?.task ?? null}
-        breakdown={recommended?.breakdown ?? null}
-        areas={areas}
-        taskTypes={taskTypes}
-        projects={projects}
-        recommendationError={recommendedError}
-      />
+      <div
+        className={cn(
+          "flex min-h-[min(85vh,calc(100vh-5.5rem))] flex-col gap-4",
+          "lg:grid lg:grid-cols-[12rem_minmax(0,1fr)_minmax(17.5rem,24rem)] lg:gap-0 lg:divide-x lg:divide-leif-border/70",
+        )}
+      >
+        {/* Spalte 1: Smart-Filter */}
+        <nav
+          className="flex shrink-0 flex-row flex-wrap gap-1.5 lg:flex-col lg:gap-2 lg:pr-3"
+          aria-label="Task-Filter"
+        >
+          {TASK_SMART_FILTER_OPTIONS.map((opt) => {
+            const count = countTasksForFilter(tasks, opt.id, todayYmd);
+            const active = filter === opt.id;
+            const Icon = FILTER_ICONS[opt.id];
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setFilter(opt.id)}
+                className={cn(
+                  "flex w-full min-w-[8rem] items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] transition-colors",
+                  active
+                    ? "bg-leif-primary font-semibold text-white shadow-md shadow-leif-primary/25"
+                    : "font-medium text-leif-secondary hover:bg-leif-surface-soft hover:text-leif-text",
+                )}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <Icon
+                    className={cn("size-4 shrink-0", active ? "text-white" : "text-leif-muted")}
+                    aria-hidden
+                  />
+                  <span className="truncate">{opt.label}</span>
+                </span>
+                <span
+                  className={cn(
+                    "tabular-nums text-[11px]",
+                    active ? "text-white/90" : "text-leif-muted",
+                  )}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
 
-      <FilterBar>
-        <FilterField label="Priorität">
-          <select
-            value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value)}
-            className={`${selectClass} min-w-[10rem]`}
-          >
-            <option value="">Alle</option>
-            {TASK_PRIORITIES.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </FilterField>
-        <FilterField label="Sortierung">
-          <select
-            value={sortMode}
-            onChange={(e) => setSortMode(e.target.value as SortMode)}
-            className={`${selectClass} min-w-[14rem]`}
-          >
-            <option value="due_asc">Fälligkeit (früheste zuerst)</option>
-            <option value="due_desc">Fälligkeit (späteste zuerst)</option>
-            <option value="priority">Priorität (hoch → niedrig)</option>
-          </select>
-        </FilterField>
-      </FilterBar>
+        {/* Spalte 2: Empfehlung + Liste */}
+        <div className="min-w-0 space-y-6 lg:space-y-7 lg:px-4">
+          <RecommendedTaskBlock
+            task={recommended?.task ?? null}
+            breakdown={recommended?.breakdown ?? null}
+            areas={areas}
+            taskTypes={taskTypes}
+            projects={projects}
+            recommendationError={recommendedError}
+            onOpenTaskInPanel={openRecommendedInPanel}
+          />
 
-      <TableShell>
-        <table className="w-full min-w-[56rem] border-collapse text-left text-[14px]">
-          <thead>
-            <tr className="border-b border-leif-divider bg-white">
-              <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">Titel</th>
-              <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">
-                Art
-              </th>
-              <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">Priorität</th>
-              <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">Geplant</th>
-              <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">Dauer</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredSorted.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-4 py-16 text-center text-[13px] text-leif-secondary">
-                  Keine Tasks für die aktuellen Filter.
-                </td>
-              </tr>
+          {listError ? <AlertBanner variant="error">{listError}</AlertBanner> : null}
+
+          <div>
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-leif-muted">
+                {TASK_SMART_FILTER_OPTIONS.find((o) => o.id === filter)?.label ?? "Tasks"}
+              </p>
+              <div className="flex max-w-full flex-col items-end gap-0.5 text-right">
+                <label
+                  htmlFor="tasks-group-by-type"
+                  title={groupByTypeHintTitle}
+                  aria-describedby={groupByTypeDescId}
+                  className="flex cursor-pointer select-none items-center gap-2 text-[12px] font-medium text-leif-secondary"
+                >
+                  <input
+                    id="tasks-group-by-type"
+                    type="checkbox"
+                    checked={groupByType}
+                    onChange={(e) => setGroupByType(e.target.checked)}
+                    className="size-3.5 shrink-0 rounded border-leif-border text-leif-primary focus:ring-2 focus:ring-leif-primary/30"
+                  />
+                  Nach Art gruppieren
+                </label>
+                <p
+                  id={groupByTypeDescId}
+                  className="max-w-[min(100%,24rem)] text-[10px] leading-snug text-leif-muted"
+                >
+                  {typeGroupQuickOrder}
+                </p>
+              </div>
+            </div>
+            {listTasks.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-leif-border/90 px-4 py-10 text-center text-[13px] text-leif-secondary">
+                Keine Tasks für diesen Filter.
+              </div>
+            ) : taskGroups.length === 1 ? (
+              groupByType ? (
+                <div className="space-y-5">
+                  {buildTaskTypeGroups(taskGroups[0].items, taskTypes).map((tg) => (
+                    <div key={tg.key}>
+                      <p className="mb-0.5 text-[12px] font-semibold text-leif-text">{tg.label}</p>
+                      <p className="mb-2 text-[10px] tabular-nums text-leif-muted">
+                        {taskTypeGroupMetaLine(tg.items)}
+                      </p>
+                      <ul className={taskGroups[0].gap}>{tg.items.map((t) => taskRowLi(t))}</ul>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <ul className={taskGroups[0].gap}>{taskGroups[0].items.map((t) => taskRowLi(t))}</ul>
+              )
             ) : (
-              filteredSorted.map((t) => (
-                <Fragment key={t.id}>
-                  <tr className="cursor-pointer transition-colors duration-150" onClick={() => toggleInlineEdit(t)}>
-                    <td className="px-4 py-3 align-middle text-[15px] font-semibold text-leif-text">{t.title}</td>
-                    <td className="px-4 py-3 align-middle">
-                      <StatusChip tone="neutral">
-                        {taskTypes.find((x) => x.key === t.task_type)?.label ?? "—"}
-                      </StatusChip>
-                    </td>
-                    <td className="px-4 py-3 align-middle">
-                      <StatusChip tone={taskPriorityChipTone(t.priority)}>{priorityLabel(t.priority)}</StatusChip>
-                    </td>
-                    <td className="px-4 py-3 align-middle tabular-nums text-leif-secondary">
-                      {formatDate(t.planned_date)}
-                    </td>
-                    <td className="px-4 py-3 align-middle text-leif-secondary">
-                      {t.estimated_minutes ? `${t.estimated_minutes} min` : "—"}
-                    </td>
-                  </tr>
-                  {expandedTaskId === t.id ? (
-                    <tr>
-                      <td colSpan={5} className="bg-[#fbfcfe] px-4 pb-3 pt-1">
-                        <TaskInlineEditor
-                          task={editingTask && editingTask.id === t.id ? editingTask : t}
-                          taskTypes={taskTypes}
-                          documents={documents}
-                          projects={projects}
-                          onRequestClose={() => setExpandedTaskId(null)}
-                          className="border-l-2 border-l-[#456990]/35 bg-transparent shadow-none"
-                        />
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
-              ))
+              <div className="space-y-0">
+                {taskGroups.map((g, idx) => (
+                  <div
+                    key={g.key}
+                    className={cn(idx > 0 && "mt-6 border-t border-leif-border/45 pt-6")}
+                  >
+                    <p className="mb-2.5 text-[11px] font-medium uppercase tracking-wide text-leif-muted">
+                      {g.label}
+                    </p>
+                    {groupByType ? (
+                      <div className="space-y-5">
+                        {buildTaskTypeGroups(g.items, taskTypes).map((tg) => (
+                          <div key={`${g.key}-${tg.key}`}>
+                            <p className="mb-0.5 text-[12px] font-semibold text-leif-text">{tg.label}</p>
+                            <p className="mb-2 text-[10px] tabular-nums text-leif-muted">
+                              {taskTypeGroupMetaLine(tg.items)}
+                            </p>
+                            <ul className={g.gap}>{tg.items.map((t) => taskRowLi(t))}</ul>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <ul className={g.gap}>{g.items.map((t) => taskRowLi(t))}</ul>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
-          </tbody>
-        </table>
-      </TableShell>
+          </div>
+        </div>
 
-      <TaskFormDialog
-        open={dialogOpen}
-        mode={dialogMode}
-        task={dialogMode === "edit" ? editingTask : null}
-        areas={areas}
-        taskTypes={taskTypes}
-        documents={documents}
-        projects={projects}
-        onClose={closeDialog}
-        recommendationFeedback={dialogMode === "edit" ? editRecommendationFeedback : null}
-        sparringCreateContext={dialogMode === "create" ? sparPersist : null}
-        initialCreateAreaId={dialogMode === "create" ? createAreaPrefill : null}
-      />
+        {/* Mobile Backdrop */}
+        {detailOpen ? (
+          <button
+            type="button"
+            aria-label="Detail schließen"
+            className="fixed inset-0 z-40 bg-black/20 lg:hidden"
+            onClick={closeDetail}
+          />
+        ) : null}
+
+        {/* Spalte 3: Detailpanel */}
+        <aside
+          className={cn(
+            "relative z-50 flex min-h-[18rem] flex-col bg-leif-surface lg:z-0 lg:min-h-0",
+            "max-lg:fixed max-lg:bottom-0 max-lg:left-0 max-lg:right-0 max-lg:max-h-[88vh] max-lg:rounded-t-xl max-lg:border-t max-lg:border-leif-border max-lg:shadow-[0_-8px_32px_rgba(15,23,42,0.12)]",
+            !detailOpen && "max-lg:hidden",
+          )}
+        >
+          {!detailOpen ? (
+            <div className="hidden min-h-[12rem] flex-1 flex-col items-center justify-center px-4 text-center lg:flex">
+              <p className="text-[13px] text-leif-secondary">Task auswählen oder neu anlegen.</p>
+            </div>
+          ) : panelCreate ? (
+            <TaskDetailPanel
+              mode="create"
+              task={null}
+              taskTypes={taskTypes}
+              documents={documents}
+              projects={projects}
+              sparringCreateContext={sparPersist}
+              onClose={closeDetail}
+            />
+          ) : selectedTask ? (
+            <TaskDetailPanel
+              mode="edit"
+              task={selectedTask}
+              taskTypes={taskTypes}
+              documents={documents}
+              projects={projects}
+              recommendationFeedback={editRecommendationFeedback}
+              onClose={closeDetail}
+              onDraftChange={handlePanelDraftChange}
+            />
+          ) : selectedId ? (
+            <div className="flex flex-1 items-center justify-center p-6 text-[13px] text-leif-secondary">
+              Task nicht gefunden.
+            </div>
+          ) : null}
+        </aside>
+      </div>
     </div>
   );
 }

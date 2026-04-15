@@ -25,6 +25,7 @@ export type TodayPlannedTaskBrief = {
   id: string;
   title: string;
   status: string;
+  planned_date: string;
   estimated_minutes: number | null;
   area_name: string;
 };
@@ -73,8 +74,9 @@ export type TodayDashboardData = {
   /** Termine in den nächsten Kalendertagen (ohne heute), begrenzt. */
   upcomingEvents: UpcomingCalendarEventBrief[];
   tasks: TodayPlannedTaskBrief[];
+  reviewTasks: TodayPlannedTaskBrief[];
   capacity: TodayCapacity;
-  errors: { events: string | null; tasks: string | null };
+  errors: { events: string | null; tasks: string | null; reviewTasks: string | null };
 };
 
 export async function fetchTodayDashboardData(
@@ -85,7 +87,7 @@ export async function fetchTodayDashboardData(
   const windowStart = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   const windowEnd = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [evRes, taskRes] = await Promise.all([
+  const [evRes, taskRes, reviewTaskRes] = await Promise.all([
     supabase
       .from("calendar_events")
       .select("id, title, description, start_time, end_time, is_all_day")
@@ -99,6 +101,14 @@ export async function fetchTodayDashboardData(
       .eq("user_id", userId)
       .eq("planned_date", todayYmd)
       .in("status", ["planned", "open"])
+      .order("title", { ascending: true }),
+    supabase
+      .from("tasks")
+      .select("id, title, planned_date, status, estimated_minutes, completed_at, areas(name)")
+      .eq("user_id", userId)
+      .lt("planned_date", todayYmd)
+      .is("completed_at", null)
+      .order("planned_date", { ascending: true })
       .order("title", { ascending: true }),
   ]);
 
@@ -143,6 +153,7 @@ export async function fetchTodayDashboardData(
         id: String(r.id),
         title: String(r.title ?? ""),
         status: String(r.status ?? ""),
+        planned_date: String(r.planned_date ?? todayYmd),
         estimated_minutes:
           r.estimated_minutes == null ? null : Number(r.estimated_minutes),
         area_name: areaName ?? "—",
@@ -156,6 +167,28 @@ export async function fetchTodayDashboardData(
     });
   }
 
+  const reviewTasks: TodayPlannedTaskBrief[] = [];
+  if (!reviewTaskRes.error) {
+    for (const row of reviewTaskRes.data ?? []) {
+      const r = row as Record<string, unknown>;
+      const areas = r.areas as { name?: string } | { name?: string }[] | null;
+      const areaName = Array.isArray(areas)
+        ? areas[0]?.name
+        : typeof areas === "object" && areas && "name" in areas
+          ? String((areas as { name: string }).name)
+          : "—";
+      reviewTasks.push({
+        id: String(r.id),
+        title: String(r.title ?? ""),
+        status: String(r.status ?? ""),
+        planned_date: String(r.planned_date ?? ""),
+        estimated_minutes:
+          r.estimated_minutes == null ? null : Number(r.estimated_minutes),
+        area_name: areaName ?? "—",
+      });
+    }
+  }
+
   const capacity = computeTodayCapacity(
     evRes.error ? [] : events,
     taskRes.error ? [] : tasks,
@@ -166,10 +199,12 @@ export async function fetchTodayDashboardData(
     events: evRes.error ? [] : events,
     upcomingEvents: evRes.error ? [] : upcomingEvents,
     tasks: taskRes.error ? [] : tasks,
+    reviewTasks: reviewTaskRes.error ? [] : reviewTasks,
     capacity,
     errors: {
       events: evRes.error?.message ?? null,
       tasks: taskRes.error?.message ?? null,
+      reviewTasks: reviewTaskRes.error?.message ?? null,
     },
   };
 }

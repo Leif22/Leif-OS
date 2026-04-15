@@ -8,6 +8,7 @@ import {
 import {
   TaskEditor,
   taskEditorToPayload,
+  taskToEditorValue,
   type TaskEditorValue,
   validateTaskEditorValue,
 } from "@/components/tasks/task-editor";
@@ -63,17 +64,7 @@ export function TaskFormDialog({
   const [pending, setPending] = useState(false);
   const initialDraft = useMemo<TaskEditorValue>(() => {
     if (mode === "edit" && task) {
-      return {
-        title: task.title,
-        estimated_minutes: task.estimated_minutes ? String(task.estimated_minutes) : "",
-        plan_choice: task.planned_date ? "date" : "inbox",
-        planned_date: task.planned_date ?? "",
-        task_type: task.task_type ?? "",
-        priority: task.priority,
-        description: task.description ?? "",
-        document_id: task.document_id ?? "",
-        project_id: task.project_id ?? "",
-      };
+      return taskToEditorValue(task);
     }
     return {
       title: sparringCreateContext?.title ?? "",
