@@ -1,15 +1,15 @@
 "use client";
 
 import { loadSparringNotizPrefillForMessage } from "@/app/(app)/sparring/actions";
+import { listProjects } from "@/app/(app)/tasks/actions";
 import { createNote, type NoteFormInput } from "@/app/(app)/notizen/actions";
 import { AlertBanner } from "@/components/ui/alert-banner";
+import { NoteEditor, noteEditorToFormInput, validateNoteEditorValue, type NoteEditorValue } from "@/components/notizen/note-editor";
 import { Button } from "@/components/ui/button";
-import { controlClass, textareaClass } from "@/components/ui/control-styles";
-import type { NoteType } from "@/lib/notes/types";
-import { PRODUCT_COPY, PRODUCT_LABEL } from "@/lib/product-labels";
+import { PRODUCT_COPY } from "@/lib/product-labels";
 import type { AreaRow } from "@/lib/tasks/types";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 type Props = {
   messageId: string | null;
@@ -19,19 +19,35 @@ type Props = {
 };
 
 export function SparringNotizFromMessageDialog({ messageId, areas, onClose, onLoadError }: Props) {
+  void areas;
   const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const formId = useId();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [chatId, setChatId] = useState<string | null>(null);
-  const [content, setContent] = useState("");
-  const [type, setType] = useState<NoteType>("note");
-  const [areaId, setAreaId] = useState("");
+  const [draft, setDraft] = useState<NoteEditorValue>({
+    title: "",
+    description: "",
+    type: "",
+    document_id: "",
+    project_id: "",
+  });
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const handlersRef = useRef({ onClose, onLoadError });
   handlersRef.current = { onClose, onLoadError };
+
+  useEffect(() => {
+    if (projectsLoaded) return;
+    void listProjects().then((res) => {
+      if (!res.ok) return;
+      setProjects(res.projects);
+      setProjectsLoaded(true);
+    });
+  }, [projectsLoaded]);
 
   useEffect(() => {
     const el = dialogRef.current;
@@ -46,15 +62,13 @@ export function SparringNotizFromMessageDialog({ messageId, areas, onClose, onLo
       setOpen(false);
       setLoading(false);
       setChatId(null);
-      setContent("");
-      setAreaId("");
+      setDraft({ title: "", description: "", type: "", document_id: "", project_id: "" });
       setError(null);
       return;
     }
     let cancelled = false;
     setChatId(null);
-    setContent("");
-    setAreaId("");
+    setDraft({ title: "", description: "", type: "", document_id: "", project_id: "" });
     setError(null);
     setLoading(true);
     setOpen(false);
@@ -67,9 +81,15 @@ export function SparringNotizFromMessageDialog({ messageId, areas, onClose, onLo
         return;
       }
       setChatId(res.prefill.chat_id);
-      setContent(res.prefill.content);
-      setType("note");
-      setAreaId("");
+      const prefill = String(res.prefill.content ?? "").trim();
+      const title = prefill.split("\n")[0] ?? "";
+      setDraft({
+        title,
+        description: prefill && prefill !== title ? prefill : "",
+        type: "",
+        document_id: "",
+        project_id: "",
+      });
       setOpen(true);
     });
     return () => {
@@ -77,14 +97,23 @@ export function SparringNotizFromMessageDialog({ messageId, areas, onClose, onLo
     };
   }, [messageId]);
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function onSubmit() {
     if (!chatId) return;
     setError(null);
+    const validationError = validateNoteEditorValue(draft);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    const mapped = noteEditorToFormInput(draft);
     const input: NoteFormInput = {
-      content,
-      type,
-      area_id: areaId.trim() ? areaId : null,
+      title: mapped.title,
+      description: mapped.description,
+      document_id: mapped.document_id,
+      project_id: mapped.project_id,
+      content: mapped.content,
+      type: mapped.type,
+      area_id: null,
       source_sparring_chat_id: chatId,
     };
     setPending(true);
@@ -122,45 +151,23 @@ export function SparringNotizFromMessageDialog({ messageId, areas, onClose, onLo
           onClose();
         }}
       >
-        <form id={formId} onSubmit={(e) => void onSubmit(e)} className="flex max-h-[min(90vh,40rem)] flex-col">
+        <form id={formId} className="flex max-h-[min(90vh,40rem)] flex-col">
           <header className="border-b border-leif-divider px-6 py-4">
             <h2 className="text-base font-semibold text-leif-text">{PRODUCT_COPY.plusMenuNotiz}</h2>
             {chatId ? <p className="mt-1 text-[12px] text-leif-muted">{PRODUCT_COPY.notizFromKiHint}</p> : null}
           </header>
           <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-6">
             {error ? <AlertBanner variant="error">{error}</AlertBanner> : null}
-            <label className="flex flex-col gap-2 text-sm">
-              <span className="font-medium text-leif-secondary">Inhalt</span>
-              <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                rows={10}
-                required
-                className={textareaClass}
-              />
-            </label>
-            <label className="flex flex-col gap-2 text-sm">
-              <span className="font-medium text-leif-secondary">Typ</span>
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value as NoteType)}
-                className={controlClass}
-              >
-                <option value="note">{PRODUCT_LABEL.notiz}</option>
-                <option value="draft">Entwurf</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-2 text-sm">
-              <span className="font-medium text-leif-secondary">{PRODUCT_COPY.notizAreaOptional}</span>
-              <select value={areaId} onChange={(e) => setAreaId(e.target.value)} className={controlClass}>
-                <option value="">—</option>
-                {areas.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <NoteEditor
+              value={draft}
+              pending={pending}
+              error={error}
+              projects={projects}
+              onChange={setDraft}
+              onSave={() => void onSubmit()}
+              onCancel={() => dialogRef.current?.close()}
+              titleAutoFocus
+            />
           </div>
           <footer className="flex justify-end gap-2 border-t border-leif-divider px-6 py-4">
             <Button
@@ -170,9 +177,6 @@ export function SparringNotizFromMessageDialog({ messageId, areas, onClose, onLo
               disabled={pending}
             >
               Abbrechen
-            </Button>
-            <Button type="submit" disabled={pending}>
-              Speichern
             </Button>
           </footer>
         </form>

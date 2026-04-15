@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { PRODUCT_COPY } from "@/lib/product-labels";
 
-type MenuAction = "task" | "note" | "document" | "sparring";
+type MenuAction = "task_inbox" | "task_create" | "note" | "document";
 type MenuItem = { readonly action: MenuAction; readonly label: string };
 
 type MenuBlock = { readonly id: string; readonly items: readonly MenuItem[] };
@@ -14,21 +14,21 @@ const MENU_BLOCKS: readonly MenuBlock[] = [
   {
     id: "create",
     items: [
-      { action: "task", label: PRODUCT_COPY.plusMenuDropdownNeuerTask },
+      { action: "task_create", label: PRODUCT_COPY.plusMenuDropdownNeuerTask },
+      { action: "task_inbox", label: PRODUCT_COPY.plusMenuDropdownNeuerEingang },
       { action: "note", label: PRODUCT_COPY.plusMenuDropdownNeueNotiz },
     ],
   },
   {
     id: "work",
     items: [
-      { action: "sparring", label: PRODUCT_COPY.plusMenuDropdownKiSparring },
       { action: "document", label: PRODUCT_COPY.plusMenuDropdownDokumentHochladen },
     ],
   },
 ] as const;
 
 const itemClass = cn(
-  "block rounded-md px-3 py-2.5 text-[13px] font-medium leading-none text-leif-text whitespace-nowrap",
+  "block w-full rounded-md px-3 py-2.5 text-left text-[13px] font-medium leading-none text-leif-text whitespace-nowrap",
   "transition-[background-color,color] duration-200 ease-out",
   "hover:bg-leif-divider active:bg-leif-divider/90",
   "focus-visible:bg-leif-divider focus-visible:outline-none",

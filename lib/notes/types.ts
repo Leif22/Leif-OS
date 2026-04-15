@@ -1,8 +1,12 @@
-export type NoteType = "note" | "draft";
+export type NoteType = string;
 
 export type NoteRow = {
   id: string;
   user_id: string;
+  title: string;
+  description: string | null;
+  document_id: string | null;
+  project_id: string | null;
   content: string;
   type: NoteType;
   area_id: string | null;

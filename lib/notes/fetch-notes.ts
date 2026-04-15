@@ -11,7 +11,7 @@ export async function fetchNotesForUser(
 ): Promise<{ notes: NoteListItem[]; deletedNotes: NoteListItem[]; error: string | null }> {
   const { data, error } = await supabase
     .from("notes")
-    .select("id, user_id, content, type, area_id, source_sparring_chat_id, source_inbox_item_id, deleted_at, created_at, updated_at, areas(name)")
+    .select("id, user_id, title, description, document_id, project_id, content, type, area_id, source_sparring_chat_id, source_inbox_item_id, deleted_at, created_at, updated_at, areas(name)")
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
 
@@ -28,6 +28,10 @@ export async function fetchNotesForUser(
     return {
       id: String(r.id),
       user_id: String(r.user_id),
+      title: String(r.title ?? ""),
+      description: r.description == null ? null : String(r.description),
+      document_id: r.document_id == null ? null : String(r.document_id),
+      project_id: r.project_id == null ? null : String(r.project_id),
       content: String(r.content ?? ""),
       type: isNoteType(String(r.type)) ? String(r.type) as NoteType : "note",
       area_id: r.area_id == null ? null : String(r.area_id),

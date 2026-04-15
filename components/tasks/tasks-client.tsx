@@ -2,9 +2,7 @@
 
 import {
   PRIORITY_ORDER,
-  STATUS_ORDER,
   TASK_PRIORITIES,
-  TASK_STATUSES,
 } from "@/lib/tasks/types";
 import type { RecommendationFeedbackInput } from "@/app/(app)/tasks/actions";
 import { PRODUCT_COPY, PRODUCT_LABEL } from "@/lib/product-labels";
@@ -12,7 +10,7 @@ import type { SparringTaskDraft } from "@/lib/sparring/task-draft";
 import type { TaskTypeRow } from "@/lib/task-types/defaults";
 import type { RecommendationBreakdown } from "@/lib/tasks/recommended";
 import type { AreaRow, TaskWithRelations } from "@/lib/tasks/types";
-import { taskPriorityChipTone, taskStatusChipTone } from "@/lib/tasks/chip-tones";
+import { taskPriorityChipTone } from "@/lib/tasks/chip-tones";
 import { RecommendedTaskBlock } from "./recommended-task-block";
 import { TaskFormDialog } from "./task-form-dialog";
 import { TaskInlineEditor } from "./task-inline-editor";
@@ -25,7 +23,7 @@ import { TableShell } from "@/components/ui/table-shell";
 import { StatusChip } from "@/components/ui/status-chip";
 import { controlClass } from "@/components/ui/control-styles";
 
-type SortMode = "due_asc" | "due_desc" | "priority" | "status";
+type SortMode = "due_asc" | "due_desc" | "priority";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -44,10 +42,6 @@ function dueSortKey(iso: string | null, nullLast: boolean): number {
   return new Date(`${iso}T00:00:00Z`).getTime();
 }
 
-function statusLabel(s: string): string {
-  return TASK_STATUSES.find((x) => x.value === s)?.label ?? s;
-}
-
 function priorityLabel(p: string): string {
   return TASK_PRIORITIES.find((x) => x.value === p)?.label ?? p;
 }
@@ -57,6 +51,7 @@ type Props = {
   areas: AreaRow[];
   taskTypes: TaskTypeRow[];
   documents: { id: string; title: string }[];
+  projects: { id: string; name: string }[];
   recommended: { task: TaskWithRelations; breakdown: RecommendationBreakdown } | null;
   recommendedError: string | null;
   /** Serverseitig aus `?from_sparring=` gebaut; nach URL-Clear im Client weiter genutzt */
@@ -83,6 +78,7 @@ export function TasksClient({
   areas,
   taskTypes,
   documents,
+  projects,
   recommended,
   recommendedError,
   sparringTaskDraft,
@@ -91,7 +87,6 @@ export function TasksClient({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const [statusFilter, setStatusFilter] = useState<string>("");
   const [priorityFilter, setPriorityFilter] = useState<string>("");
   const [sortMode, setSortMode] = useState<SortMode>("due_asc");
 
@@ -154,7 +149,6 @@ export function TasksClient({
 
   const filteredSorted = useMemo(() => {
     let list = tasks.slice();
-    if (statusFilter) list = list.filter((t) => t.status === statusFilter);
     if (priorityFilter) list = list.filter((t) => t.priority === priorityFilter);
 
     list.sort((a, b) => {
@@ -173,15 +167,10 @@ export function TasksClient({
         const pb = PRIORITY_ORDER[b.priority];
         if (pa !== pb) return pa - pb;
       }
-      if (sortMode === "status") {
-        const sa = STATUS_ORDER[a.status];
-        const sb = STATUS_ORDER[b.status];
-        if (sa !== sb) return sa - sb;
-      }
       return a.title.localeCompare(b.title, "de");
     });
     return list;
-  }, [tasks, statusFilter, priorityFilter, sortMode]);
+  }, [tasks, priorityFilter, sortMode]);
 
   function openCreate() {
     setCreateAreaPrefill(null);
@@ -211,7 +200,7 @@ export function TasksClient({
     <div className="space-y-8">
       <PageHeader
         title={PRODUCT_LABEL.tasks}
-        description="Priorisierte Liste mit klaren Status- und Prioritätskennzeichnungen."
+        description="Planungsorientierte Liste für schnelle Task-Anpassungen."
         actions={
           <Button type="button" onClick={openCreate}>
             {PRODUCT_COPY.plusMenuTask}
@@ -224,24 +213,11 @@ export function TasksClient({
         breakdown={recommended?.breakdown ?? null}
         areas={areas}
         taskTypes={taskTypes}
+        projects={projects}
         recommendationError={recommendedError}
       />
 
       <FilterBar>
-        <FilterField label="Status">
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className={`${selectClass} min-w-[10rem]`}
-          >
-            <option value="">Alle</option>
-            {TASK_STATUSES.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </FilterField>
         <FilterField label="Priorität">
           <select
             value={priorityFilter}
@@ -265,7 +241,6 @@ export function TasksClient({
             <option value="due_asc">Fälligkeit (früheste zuerst)</option>
             <option value="due_desc">Fälligkeit (späteste zuerst)</option>
             <option value="priority">Priorität (hoch → niedrig)</option>
-            <option value="status">Status</option>
           </select>
         </FilterField>
       </FilterBar>
@@ -278,7 +253,6 @@ export function TasksClient({
               <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">
                 Art
               </th>
-              <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">Status</th>
               <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">Priorität</th>
               <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">Geplant</th>
               <th className="px-4 py-3 text-left text-[12px] font-semibold text-leif-secondary">Dauer</th>
@@ -287,7 +261,7 @@ export function TasksClient({
           <tbody>
             {filteredSorted.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-16 text-center text-[13px] text-leif-secondary">
+                <td colSpan={5} className="px-4 py-16 text-center text-[13px] text-leif-secondary">
                   Keine Tasks für die aktuellen Filter.
                 </td>
               </tr>
@@ -302,9 +276,6 @@ export function TasksClient({
                       </StatusChip>
                     </td>
                     <td className="px-4 py-3 align-middle">
-                      <StatusChip tone={taskStatusChipTone(t.status)}>{statusLabel(t.status)}</StatusChip>
-                    </td>
-                    <td className="px-4 py-3 align-middle">
                       <StatusChip tone={taskPriorityChipTone(t.priority)}>{priorityLabel(t.priority)}</StatusChip>
                     </td>
                     <td className="px-4 py-3 align-middle tabular-nums text-leif-secondary">
@@ -316,12 +287,14 @@ export function TasksClient({
                   </tr>
                   {expandedTaskId === t.id ? (
                     <tr>
-                      <td colSpan={6} className="bg-[#fbfcfe] px-4 py-3">
+                      <td colSpan={5} className="bg-[#fbfcfe] px-4 pb-3 pt-1">
                         <TaskInlineEditor
                           task={editingTask && editingTask.id === t.id ? editingTask : t}
                           taskTypes={taskTypes}
                           documents={documents}
+                          projects={projects}
                           onRequestClose={() => setExpandedTaskId(null)}
+                          className="border-l-2 border-l-[#456990]/35 bg-transparent shadow-none"
                         />
                       </td>
                     </tr>
@@ -340,6 +313,7 @@ export function TasksClient({
         areas={areas}
         taskTypes={taskTypes}
         documents={documents}
+        projects={projects}
         onClose={closeDialog}
         recommendationFeedback={dialogMode === "edit" ? editRecommendationFeedback : null}
         sparringCreateContext={dialogMode === "create" ? sparPersist : null}

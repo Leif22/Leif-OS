@@ -10,6 +10,7 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { fetchTaskTypesForUser } from "@/lib/task-types/fetch-task-types";
 import { fetchRecommendedTask } from "@/lib/tasks/fetch-recommended";
+import { fetchProjectsForUser } from "@/lib/projects/fetch-projects";
 import { PRODUCT_LABEL } from "@/lib/product-labels";
 import { fetchTasksPageData } from "@/lib/tasks/fetch-tasks";
 import Link from "next/link";
@@ -30,6 +31,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const supabase = await createClient();
   const { user, tasks, areas, loadError } = await fetchTasksPageData(supabase);
   const taskTypesRes = user ? await fetchTaskTypesForUser(supabase, user.id) : { taskTypes: [], error: null };
+  const projectsRes = user ? await fetchProjectsForUser(supabase, user.id) : { projects: [], error: null };
   const docsRes = await supabase
     .from("documents")
     .select("id,title")
@@ -88,6 +90,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
         areas={areas}
         taskTypes={taskTypesRes.taskTypes}
         documents={documents}
+        projects={projectsRes.projects.map((p) => ({ id: p.id, name: p.name }))}
         recommended={
           reco.task && reco.breakdown ? { task: reco.task, breakdown: reco.breakdown } : null
         }

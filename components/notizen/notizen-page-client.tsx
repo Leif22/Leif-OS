@@ -1,23 +1,24 @@
 "use client";
 
-import { createNote, deleteNote, updateNote, type NoteFormInput } from "@/app/(app)/notizen/actions";
+import { createNote, deleteNote, restoreNote, updateNote, type NoteFormInput } from "@/app/(app)/notizen/actions";
 import { AlertBanner } from "@/components/ui/alert-banner";
+import { NoteEditor, noteEditorToFormInput, validateNoteEditorValue, type NoteEditorValue } from "@/components/notizen/note-editor";
 import { Button } from "@/components/ui/button";
-import { controlClass, textareaClass } from "@/components/ui/control-styles";
 import { PageHeader } from "@/components/ui/page-header";
 import { TableShell } from "@/components/ui/table-shell";
-import type { NoteListItem, NoteType } from "@/lib/notes/types";
+import type { NoteListItem } from "@/lib/notes/types";
 import { PRODUCT_COPY, PRODUCT_LABEL } from "@/lib/product-labels";
 import type { SparringNotizPrefill } from "@/lib/sparring/note-prefill";
 import type { AreaRow } from "@/lib/tasks/types";
 import { ChevronDown, Trash2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 type Props = {
   notes: NoteListItem[];
   deletedNotes: NoteListItem[];
   areas: AreaRow[];
+  projects: { id: string; name: string }[];
   loadError: string | null;
   initialDialog: "none" | "create" | "edit";
   initialNoteId: string | null;
@@ -39,20 +40,23 @@ function formatWhen(iso: string): string {
   return d.toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" });
 }
 
-function typeLabel(t: NoteType): string {
-  return t === "draft" ? "Entwurf" : "Notiz";
+function typeLabel(t: string | null | undefined): string {
+  if (!t) return "—";
+  return t;
 }
 
 export function NotizenPageClient({
   notes,
   deletedNotes,
   areas,
+  projects,
   loadError,
   initialDialog,
   initialNoteId,
   initialAreaPrefill,
   sparringNotizDraft,
 }: Props) {
+  void areas;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -61,9 +65,13 @@ export function NotizenPageClient({
   const openedFromUrl = useRef(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<NoteListItem | null>(null);
-  const [content, setContent] = useState("");
-  const [type, setType] = useState<NoteType>("note");
-  const [areaId, setAreaId] = useState<string>("");
+  const [draft, setDraft] = useState<NoteEditorValue>({
+    title: "",
+    description: "",
+    type: "",
+    document_id: "",
+    project_id: "",
+  });
   const [sourceSparringChatId, setSourceSparringChatId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -116,14 +124,19 @@ export function NotizenPageClient({
   ]);
 
   function beginCreate(opts?: {
-    areaId?: string;
     content?: string;
     sourceSparringChatId?: string | null;
   }) {
+    const fallbackTitle = String(opts?.content ?? "").trim().split("\n")[0] ?? "";
+    const fallbackDescription = String(opts?.content ?? "").trim();
     setEditing(null);
-    setContent(opts?.content ?? "");
-    setType("note");
-    setAreaId(opts?.areaId ?? "");
+    setDraft({
+      title: fallbackTitle,
+      description: fallbackDescription && fallbackDescription !== fallbackTitle ? fallbackDescription : "",
+      type: "",
+      document_id: "",
+      project_id: "",
+    });
     setSourceSparringChatId(opts?.sourceSparringChatId?.trim() || null);
     setError(null);
     setModalOpen(true);
@@ -131,9 +144,13 @@ export function NotizenPageClient({
 
   function beginEdit(n: NoteListItem) {
     setEditing(n);
-    setContent(n.content);
-    setType(n.type);
-    setAreaId(n.area_id ?? "");
+    setDraft({
+      title: n.title ?? "",
+      description: n.description ?? "",
+      type: n.type ?? "",
+      document_id: n.document_id ?? "",
+      project_id: n.project_id ?? "",
+    });
     setSourceSparringChatId(null);
     setError(null);
     setModalOpen(true);
@@ -146,13 +163,22 @@ export function NotizenPageClient({
     setError(null);
   }
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function onSubmit() {
     setError(null);
+    const validationError = validateNoteEditorValue(draft);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    const mapped = noteEditorToFormInput(draft);
     const input: NoteFormInput = {
-      content,
-      type,
-      area_id: areaId.trim() ? areaId : null,
+      title: mapped.title,
+      description: mapped.description,
+      document_id: mapped.document_id,
+      project_id: mapped.project_id,
+      type: mapped.type,
+      content: mapped.content,
+      area_id: null,
       source_sparring_chat_id: editing ? undefined : sourceSparringChatId,
     };
     setPending(true);
@@ -213,6 +239,22 @@ export function NotizenPageClient({
     }
   }
 
+  async function onRestore(noteId: string) {
+    setPending(true);
+    setError(null);
+    try {
+      const res = await restoreNote(noteId);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      router.replace(pathname, { scroll: false });
+      router.refresh();
+    } finally {
+      setPending(false);
+    }
+  }
+
   if (loadError) {
     return <AlertBanner variant="error">Notizen konnten nicht geladen werden: {loadError}</AlertBanner>;
   }
@@ -234,11 +276,11 @@ export function NotizenPageClient({
           <thead>
             <tr className="border-b border-leif-divider bg-leif-divider/60">
               <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-leif-muted">
-                Auszug
+                Titel
               </th>
               <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-leif-muted">Typ</th>
               <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-leif-muted">
-                {PRODUCT_LABEL.lebensbereich}
+                Beschreibung
               </th>
               <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-leif-muted">
                 Aktualisiert
@@ -262,9 +304,9 @@ export function NotizenPageClient({
                   className="cursor-pointer border-b border-leif-divider transition-colors last:border-0 hover:bg-leif-divider/50"
                   onClick={() => beginEdit(n)}
                 >
-                  <td className="max-w-md px-4 py-3 text-leif-text">{clip(n.content, 100)}</td>
+                  <td className="max-w-md px-4 py-3 text-leif-text">{clip(n.title || "Ohne Titel", 100)}</td>
                   <td className="px-4 py-3 text-leif-secondary">{typeLabel(n.type)}</td>
-                  <td className="px-4 py-3 text-leif-secondary">{n.area_name ?? "—"}</td>
+                  <td className="px-4 py-3 text-leif-secondary">{clip(n.description ?? "—", 80)}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-xs text-leif-muted">{formatWhen(n.updated_at)}</td>
                   <td className="px-4 py-3 text-right">
                     <button
@@ -304,9 +346,20 @@ export function NotizenPageClient({
           ) : (
             <ul className="mt-3 divide-y divide-leif-divider border-t border-leif-divider">
               {deletedNotes.map((n) => (
-                <li key={n.id} className="py-2">
-                  <p className="text-sm text-leif-text">{clip(n.content, 120)}</p>
-                  <p className="mt-1 text-xs text-leif-muted">Gelöscht/aktualisiert: {formatWhen(n.updated_at)}</p>
+                <li key={n.id} className="flex items-start justify-between gap-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-sm text-leif-text">{clip(n.content, 120)}</p>
+                    <p className="mt-1 text-xs text-leif-muted">Gelöscht/aktualisiert: {formatWhen(n.updated_at)}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={pending}
+                    onClick={() => void onRestore(n.id)}
+                  >
+                    Wiederherstellen
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -319,7 +372,7 @@ export function NotizenPageClient({
         className="w-[min(36rem,calc(100vw-2rem))] max-h-[min(90vh,40rem)] overflow-hidden rounded-[12px] border border-leif-border bg-leif-surface p-0 text-leif-text shadow-leif [&::backdrop]:bg-black/25"
         onClose={closeDialog}
       >
-        <form id={formId} onSubmit={(e) => void onSubmit(e)} className="flex max-h-[min(90vh,40rem)] flex-col">
+        <form id={formId} className="flex max-h-[min(90vh,40rem)] flex-col">
           <header className="border-b border-leif-divider px-6 py-4">
             <h2 className="text-base font-semibold text-leif-text">
               {editing ? `${PRODUCT_LABEL.notiz} bearbeiten` : PRODUCT_COPY.plusMenuNotiz}
@@ -330,38 +383,16 @@ export function NotizenPageClient({
             {!editing && sourceSparringChatId ? (
               <p className="text-[12px] text-leif-muted">{PRODUCT_COPY.notizFromKiHint}</p>
             ) : null}
-            <label className="flex flex-col gap-2 text-sm">
-              <span className="font-medium text-leif-secondary">Inhalt</span>
-              <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                rows={10}
-                required
-                className={textareaClass}
-              />
-            </label>
-            <label className="flex flex-col gap-2 text-sm">
-              <span className="font-medium text-leif-secondary">Typ</span>
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value as NoteType)}
-                className={controlClass}
-              >
-                <option value="note">{PRODUCT_LABEL.notiz}</option>
-                <option value="draft">Entwurf</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-2 text-sm">
-              <span className="font-medium text-leif-secondary">{PRODUCT_COPY.notizAreaOptional}</span>
-              <select value={areaId} onChange={(e) => setAreaId(e.target.value)} className={controlClass}>
-                <option value="">—</option>
-                {areas.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <NoteEditor
+              value={draft}
+              pending={pending}
+              error={error}
+              onChange={setDraft}
+              projects={projects}
+              onSave={() => void onSubmit()}
+              onCancel={() => dialogRef.current?.close()}
+              titleAutoFocus
+            />
           </div>
           <footer className="flex flex-wrap justify-between gap-2 border-t border-leif-divider px-6 py-4">
             <div>
@@ -374,9 +405,6 @@ export function NotizenPageClient({
             <div className="flex gap-2">
               <Button type="button" variant="secondary" onClick={() => dialogRef.current?.close()}>
                 Abbrechen
-              </Button>
-              <Button type="submit" disabled={pending}>
-                Speichern
               </Button>
             </div>
           </footer>

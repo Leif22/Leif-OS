@@ -11,6 +11,12 @@ import {
   rejectInboxAiSuggestion,
   type CreateTaskFromInboxInput,
 } from "@/app/(app)/inbox/actions";
+import {
+  TaskEditor,
+  type TaskEditorValue,
+  taskEditorToPayload,
+  validateTaskEditorValue,
+} from "@/components/tasks/task-editor";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { controlClass, textareaClass } from "@/components/ui/control-styles";
 import { AlertBanner } from "@/components/ui/alert-banner";
@@ -22,7 +28,7 @@ import { cn } from "@/lib/cn";
 import { hrefForProcessedInboxItem } from "@/lib/inbox/inbox-processed-href";
 import { PRODUCT_COPY, PRODUCT_LABEL } from "@/lib/product-labels";
 import type { TaskTypeRow } from "@/lib/task-types/defaults";
-import { TASK_PRIORITIES, type AreaRow } from "@/lib/tasks/types";
+import type { AreaRow } from "@/lib/tasks/types";
 import {
   Bot,
   CalendarPlus,
@@ -196,6 +202,26 @@ function aiFilledFieldsSummary(suggestion: InboxAiSuggestion): string[] {
   return out;
 }
 
+function taskEditorInitialValue(item: InboxListItem, suggestion: InboxAiSuggestion | null): TaskEditorValue {
+  return {
+    title: suggestion?.tool === "task" ? suggestion.title : defaultTitleFromContent(item.content),
+    estimated_minutes:
+      suggestion?.tool === "task" && suggestion.task?.duration_minutes
+        ? String(suggestion.task.duration_minutes)
+        : "30",
+    plan_choice:
+      suggestion?.tool === "task"
+        ? (suggestion.task?.due_choice ?? "today")
+        : "today",
+    planned_date: suggestion?.tool === "task" ? (suggestion.task?.due_date ?? "") : "",
+    task_type: suggestion?.tool === "task" ? (suggestion.task?.task_type ?? "") : "",
+    priority: suggestion?.tool === "task" ? (suggestion.task?.priority ?? "normal") : "normal",
+    description: suggestion?.tool === "task" ? (suggestion.task?.description ?? item.content) : item.content,
+    document_id: suggestion?.tool === "task" ? (suggestion.task?.document_id ?? "") : "",
+    project_id: "",
+  };
+}
+
 type Props = {
   pending: InboxListItem[];
   areas: AreaRow[];
@@ -302,6 +328,7 @@ export function InboxPendingTableWithWorkflows({
   const [successId, setSuccessId] = useState<string | null>(null);
 
   const [inlineEdit, setInlineEdit] = useState<{ itemId: string; kind: InlineEditKind } | null>(null);
+  const [taskEditorDraftById, setTaskEditorDraftById] = useState<Record<string, TaskEditorValue>>({});
 
   const [documentDialogItem, setDocumentDialogItem] = useState<InboxListItem | null>(null);
   const documentDialogRef = useRef<HTMLDialogElement>(null);
@@ -406,6 +433,15 @@ export function InboxPendingTableWithWorkflows({
 
   function toggleInlineEdit(item: InboxListItem, kind?: InlineEditKind) {
     const nextKind = kind ?? suggestedToolForItem(item);
+    if (nextKind === "task") {
+      const isRejected = rejectedById[item.id] ?? item.ai_suggestion_rejected;
+      const persistedSuggestion = aiSuggestionById[item.id] ?? item.ai_suggestion;
+      const suggestion = !isRejected && persistedSuggestion ? persistedSuggestion : inlinePrefillById[item.id] ?? null;
+      setTaskEditorDraftById((current) => ({
+        ...current,
+        [item.id]: current[item.id] ?? taskEditorInitialValue(item, suggestion),
+      }));
+    }
     setActionPickerItem(null);
     setInlineEdit((current) => {
       if (current?.itemId === item.id && current.kind === nextKind) return null;
@@ -482,36 +518,22 @@ export function InboxPendingTableWithWorkflows({
     });
   }
 
-  async function submitTaskFromInbox(item: InboxListItem, e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const today = new Date();
-    const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
-      today.getDate(),
-    ).padStart(2, "0")}`;
-    const tomorrowDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1, 12, 0, 0);
-    const tomorrow = `${tomorrowDate.getFullYear()}-${String(tomorrowDate.getMonth() + 1).padStart(2, "0")}-${String(
-      tomorrowDate.getDate(),
-    ).padStart(2, "0")}`;
-    const planChoice = String(fd.get("plan_choice") ?? "today");
-    const plannedDateRaw = String(fd.get("planned_date") ?? "").trim();
-    const plannedDate =
-      planChoice === "today" ? ymd : planChoice === "tomorrow" ? tomorrow : planChoice === "date" ? plannedDateRaw : null;
-    const estRaw = String(fd.get("estimated_minutes") ?? "").trim();
-    const estNum = estRaw === "" ? null : Number(estRaw);
-    const documentRaw = String(fd.get("document_id") ?? "").trim();
-    const documentId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(documentRaw)
-      ? documentRaw
-      : null;
+  async function submitTaskFromInbox(item: InboxListItem, draft: TaskEditorValue) {
+    const validationError = validateTaskEditorValue(draft, { allowInboxWithoutDuration: true });
+    if (validationError) {
+      setActionError(validationError);
+      return;
+    }
+    const payload = taskEditorToPayload(draft);
     const input: CreateTaskFromInboxInput = {
       inbox_item_id: item.id,
-      title: String(fd.get("title") ?? ""),
-      description: String(fd.get("description") ?? ""),
-      task_type: (String(fd.get("task_type") ?? "").trim() || null) as CreateTaskFromInboxInput["task_type"],
-      priority: String(fd.get("priority") ?? "normal") as CreateTaskFromInboxInput["priority"],
-      planned_date: plannedDate,
-      estimated_minutes: estNum != null && Number.isFinite(estNum) ? estNum : null,
-      document_id: documentId,
+      title: payload.title,
+      description: payload.description,
+      task_type: payload.task_type as CreateTaskFromInboxInput["task_type"],
+      priority: payload.priority as CreateTaskFromInboxInput["priority"],
+      planned_date: payload.planned_date,
+      estimated_minutes: payload.estimated_minutes,
+      document_id: payload.document_id,
     };
     setActionError(null);
     setBusyId(item.id);
@@ -764,122 +786,29 @@ export function InboxPendingTableWithWorkflows({
     const persistedSuggestion = aiSuggestionById[item.id] ?? item.ai_suggestion;
     const suggestion = !isRejected && persistedSuggestion ? persistedSuggestion : inlinePrefillById[item.id];
     if (inlineEdit.kind === "task") {
+      const draft = taskEditorDraftById[item.id] ?? taskEditorInitialValue(item, suggestion ?? null);
       return (
-        <form
-          onSubmit={(e) => void submitTaskFromInbox(item, e)}
-          className="mt-2 space-y-3 rounded-lg border border-leif-border bg-white p-3"
-        >
-          <label className="block text-sm font-medium text-leif-secondary">
-            Titel *
-            <input
-              name="title"
-              type="text"
-              required
-              defaultValue={suggestion?.tool === "task" ? suggestion.title : defaultTitleFromContent(item.content)}
-              className={`${controlClass} mt-1.5`}
-            />
-          </label>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="block text-sm font-medium text-leif-secondary">
-              Fälligkeit *
-              <select
-                name="plan_choice"
-                defaultValue={suggestion?.tool === "task" ? (suggestion.task?.due_choice ?? "today") : "today"}
-                className={`${controlClass} mt-1.5`}
-                required
-              >
-                <option value="today">Heute</option>
-                <option value="tomorrow">Morgen</option>
-                <option value="date">Datum…</option>
-              </select>
-            </label>
-            <label className="block text-sm font-medium text-leif-secondary">
-              Dauer (Minuten) *
-              <input
-                name="estimated_minutes"
-                type="number"
-                min={1}
-                step={1}
-                required
-                defaultValue={suggestion?.tool === "task" ? (suggestion.task?.duration_minutes ?? 30) : 30}
-                className={`${controlClass} mt-1.5`}
-              />
-            </label>
-          </div>
-          <label className="block text-sm font-medium text-leif-secondary">
-            Datum (bei „Datum…“)
-            <input
-              name="planned_date"
-              type="date"
-              defaultValue={suggestion?.tool === "task" ? (suggestion.task?.due_date ?? "") : ""}
-              className={`${controlClass} mt-1.5`}
-            />
-          </label>
-          <details className="rounded-md border border-leif-border/70 bg-leif-canvas/30 p-2">
-            <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-leif-secondary">
-              <span>Optional</span>
-              <ChevronDown className="size-4 shrink-0 text-[#9ca3af]" />
-            </summary>
-            <div className="mt-2 space-y-3">
-            <label className="block text-sm font-medium text-leif-secondary">
-              Priorität
-              <select
-                name="priority"
-                defaultValue={suggestion?.tool === "task" ? (suggestion.task?.priority ?? "normal") : "normal"}
-                className={`${controlClass} mt-1.5`}
-              >
-                {TASK_PRIORITIES.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm font-medium text-leif-secondary">
-              Art
-              <select
-                name="task_type"
-                defaultValue={suggestion?.tool === "task" ? (suggestion.task?.task_type ?? "") : ""}
-                className={`${controlClass} mt-1.5`}
-              >
-                <option value="">—</option>
-                {taskTypes.map((t) => (
-                  <option key={t.id} value={t.key}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm font-medium text-leif-secondary">
-              Beschreibung
-              <textarea
-                name="description"
-                rows={3}
-                defaultValue={suggestion?.tool === "task" ? (suggestion.task?.description ?? item.content) : item.content}
-                className={`${textareaClass} mt-1.5`}
-              />
-            </label>
-            <label className="block text-sm font-medium text-leif-secondary">
-              Dokument (UUID)
-              <input
-                name="document_id"
-                type="text"
-                defaultValue={suggestion?.tool === "task" ? (suggestion.task?.document_id ?? "") : ""}
-                placeholder="optional"
-                className={`${controlClass} mt-1.5`}
-              />
-            </label>
-            </div>
-          </details>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setInlineEdit(null)} disabled={busy}>
-              Abbrechen
-            </Button>
-            <Button type="submit" variant="primary" disabled={busy}>
-              {busy ? "Speichern…" : "Anlegen"}
-            </Button>
-          </div>
-        </form>
+        <div className="mt-2 rounded-lg border border-leif-border bg-white p-3">
+          <TaskEditor
+            mode="inline"
+            value={draft}
+            taskTypes={taskTypes}
+            documents={[]}
+            pending={busy}
+            error={actionError}
+            titleAutoFocus
+            hideInboxChoice={false}
+            saveLabel="Anlegen"
+            onChange={(next) =>
+              setTaskEditorDraftById((current) => ({
+                ...current,
+                [item.id]: next,
+              }))
+            }
+            onSave={() => void submitTaskFromInbox(item, draft)}
+            onCancel={() => setInlineEdit(null)}
+          />
+        </div>
       );
     }
     if (inlineEdit.kind === "note") {

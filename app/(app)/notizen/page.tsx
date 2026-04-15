@@ -2,6 +2,7 @@ import { NotizenPageClient } from "@/components/notizen/notizen-page-client";
 import { buttonClassName } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { fetchNotesForUser } from "@/lib/notes/fetch-notes";
+import { fetchProjectsForUser } from "@/lib/projects/fetch-projects";
 import {
   fetchSparringNotizPrefill,
   fetchSparringNotizPrefillFromMessage,
@@ -41,13 +42,14 @@ export default async function NotizenPage({ searchParams }: PageProps) {
     );
   }
 
-  const [{ notes, deletedNotes, error: notesErr }, areasRes] = await Promise.all([
+  const [{ notes, deletedNotes, error: notesErr }, areasRes, projectsRes] = await Promise.all([
     fetchNotesForUser(supabase, user.id),
     supabase.from("areas").select("id, name, sort_order").eq("user_id", user.id).order("sort_order"),
+    fetchProjectsForUser(supabase, user.id),
   ]);
 
   const areas = (areasRes.data ?? []) as AreaRow[];
-  const loadError = notesErr ?? areasRes.error?.message ?? null;
+  const loadError = notesErr ?? areasRes.error?.message ?? projectsRes.error ?? null;
 
   const wantNew = sp.new === "1";
   const rawNote = typeof sp.note === "string" ? sp.note.trim() : "";
@@ -91,6 +93,7 @@ export default async function NotizenPage({ searchParams }: PageProps) {
         notes={notes}
         deletedNotes={deletedNotes}
         areas={areas}
+        projects={projectsRes.projects.map((p) => ({ id: p.id, name: p.name }))}
         loadError={loadError}
         initialDialog={initialDialog}
         initialNoteId={initialNoteId}

@@ -61,6 +61,7 @@ type Props = {
   breakdown: RecommendationBreakdown | null;
   areas: AreaRow[];
   taskTypes?: TaskTypeRow[];
+  projects?: { id: string; name: string }[];
   recommendationError?: string | null;
   heading?: string;
 };
@@ -70,6 +71,7 @@ export function RecommendedTaskBlock({
   breakdown,
   areas,
   taskTypes,
+  projects = [],
   recommendationError,
   heading = "Empfohlene Aufgabe",
 }: Props) {
@@ -179,6 +181,7 @@ export function RecommendedTaskBlock({
           task={task}
           areas={areas}
           taskTypes={taskTypes}
+          projects={projects}
           onClose={() => setDialogOpen(false)}
           recommendationFeedback={feedbackAccepted}
         />

@@ -39,6 +39,10 @@ async function insertRecommendationLog(
 
 const PRIORITIES: TaskPriority[] = ["high", "normal", "low"];
 
+function isMissingProjectsTableError(message: string): boolean {
+  return message.includes("Could not find the table 'public.projects'") || message.includes("schema cache");
+}
+
 function coercePriority(s: string): TaskPriority {
   return PRIORITIES.includes(s as TaskPriority) ? (s as TaskPriority) : "normal";
 }
@@ -51,6 +55,7 @@ export type TaskFormPayload = {
   planned_date: string | null;
   estimated_minutes: number | null;
   document_id: string | null;
+  project_id: string | null;
 };
 
 async function assertSparringChatForTask(
@@ -87,6 +92,7 @@ function sanitizePayload(payload: TaskFormPayload): TaskFormPayload {
     task_type: payload.task_type ? String(payload.task_type).trim() : null,
     priority: coercePriority(normalizedPriority),
     document_id: payload.document_id?.trim() || null,
+    project_id: payload.project_id?.trim() || null,
   };
 }
 
@@ -103,6 +109,23 @@ async function resolveTaskTypeForUser(
     .eq("key", taskType)
     .maybeSingle();
   return data ? taskType : null;
+}
+
+async function resolveProjectForUser(
+  supabase: SupabaseClient,
+  userId: string,
+  projectId: string | null,
+): Promise<string | null> {
+  if (!projectId) return null;
+  const { data, error } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("id", projectId)
+    .eq("is_archived", false)
+    .maybeSingle();
+  if (error && isMissingProjectsTableError(error.message)) return null;
+  return data ? projectId : null;
 }
 
 export type CreateTaskOptions = {
@@ -124,6 +147,7 @@ export async function createTask(
   }
   const user = userData.user;
   const taskType = await resolveTaskTypeForUser(supabase, user.id, p.task_type);
+  const projectId = await resolveProjectForUser(supabase, user.id, p.project_id);
 
   const sparId = options?.source_sparring_chat_id?.trim() || null;
   if (sparId) {
@@ -143,6 +167,7 @@ export async function createTask(
       planned_date: p.planned_date || null,
       estimated_minutes: p.estimated_minutes,
       document_id: p.document_id,
+      project_id: projectId,
       completed_at: null,
       source_sparring_chat_id: sparId,
     })
@@ -236,6 +261,7 @@ export async function updateTask(
   }
   const user = userData.user;
   const taskType = await resolveTaskTypeForUser(supabase, user.id, p.task_type);
+  const projectId = await resolveProjectForUser(supabase, user.id, p.project_id);
 
   const { error: updErr } = await supabase
     .from("tasks")
@@ -248,6 +274,7 @@ export async function updateTask(
       planned_date: p.planned_date || null,
       estimated_minutes: p.estimated_minutes,
       document_id: p.document_id,
+      project_id: projectId,
     })
     .eq("id", taskId)
     .eq("user_id", user.id);
@@ -307,5 +334,31 @@ export async function listTaskDocuments(): Promise<
   return {
     ok: true,
     documents: (data ?? []).map((d) => ({ id: String(d.id), title: String(d.title ?? "") })),
+  };
+}
+
+export async function listProjects(): Promise<
+  { ok: true; projects: { id: string; name: string }[] } | { ok: false; error: string }
+> {
+  const supabase = await createClient();
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userData.user) return { ok: false, error: "Nicht angemeldet." };
+
+  const { data, error } = await supabase
+    .from("projects")
+    .select("id, name")
+    .eq("user_id", userData.user.id)
+    .eq("is_archived", false)
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+  if (error) {
+    if (isMissingProjectsTableError(error.message)) {
+      return { ok: true, projects: [] };
+    }
+    return { ok: false, error: error.message };
+  }
+  return {
+    ok: true,
+    projects: (data ?? []).map((p) => ({ id: String(p.id), name: String(p.name ?? "") })),
   };
 }

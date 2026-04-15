@@ -4,6 +4,77 @@ import { AI_MODELS, validateAiModel } from "@/lib/ai/config";
 import { describeOpenAiClientError } from "@/lib/ai/openai-error-message";
 import type { InboxAiSuggestion } from "@/lib/inbox/types";
 
+const WEEKDAY_MAP: { regex: RegExp; day: number }[] = [
+  { regex: /\bmontag\b/i, day: 1 },
+  { regex: /\bdienstag\b/i, day: 2 },
+  { regex: /\bmittwoch\b/i, day: 3 },
+  { regex: /\bdonnerstag\b/i, day: 4 },
+  { regex: /\bfreitag\b/i, day: 5 },
+  { regex: /\bsamstag\b/i, day: 6 },
+  { regex: /\bsonntag\b/i, day: 0 },
+];
+
+function berlinTodayDate(): Date {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("de-DE", {
+    timeZone: "Europe/Berlin",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const year = Number(parts.find((p) => p.type === "year")?.value ?? "0");
+  const month = Number(parts.find((p) => p.type === "month")?.value ?? "1");
+  const day = Number(parts.find((p) => p.type === "day")?.value ?? "1");
+  return new Date(year, month - 1, day);
+}
+
+function toYmd(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function nextFutureWeekdayYmd(targetDay: number): string {
+  const today = berlinTodayDate();
+  const currentDay = today.getDay();
+  let delta = (targetDay - currentDay + 7) % 7;
+  if (delta === 0) delta = 7; // "today" means next week per rule
+  const out = new Date(today);
+  out.setDate(today.getDate() + delta);
+  return toYmd(out);
+}
+
+function mentionedWeekdayYmd(content: string): string | null {
+  for (const entry of WEEKDAY_MAP) {
+    if (entry.regex.test(content)) return nextFutureWeekdayYmd(entry.day);
+  }
+  return null;
+}
+
+function enforceWeekdayFutureRule(content: string, suggestion: InboxAiSuggestion): InboxAiSuggestion {
+  const weekdayYmd = mentionedWeekdayYmd(content);
+  if (!weekdayYmd) return suggestion;
+
+  if (suggestion.tool === "task") {
+    const task = { ...(suggestion.task ?? {}) };
+    task.due_choice = "date";
+    task.due_date = weekdayYmd;
+    return { ...suggestion, task };
+  }
+
+  if (suggestion.tool === "calendar") {
+    const calendar = { ...(suggestion.calendar ?? {}) };
+    if (calendar.start_local && /^\d{4}-\d{2}-\d{2}T/.test(calendar.start_local)) {
+      calendar.start_local = `${weekdayYmd}${calendar.start_local.slice(10)}`;
+    }
+    if (calendar.end_local && /^\d{4}-\d{2}-\d{2}T/.test(calendar.end_local)) {
+      calendar.end_local = `${weekdayYmd}${calendar.end_local.slice(10)}`;
+    }
+    calendar.date = weekdayYmd;
+    return { ...suggestion, calendar };
+  }
+
+  return suggestion;
+}
+
 function extractJsonObject(raw: string): Record<string, unknown> | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -115,6 +186,8 @@ export async function buildInboxSuggestion(
   content: string,
 ): Promise<{ status: "ready" | "failed"; suggestion: InboxAiSuggestion | null; error: string | null; checkedAt: string }> {
   const checkedAt = new Date().toISOString();
+  const isMissingInboxRulesTableError = (message: string) =>
+    message.includes("Could not find the table 'public.user_inbox_ai_rules'") || message.includes("schema cache");
   try {
     const [taskTypesRes, rulesRes] = await Promise.all([
       supabase
@@ -125,10 +198,14 @@ export async function buildInboxSuggestion(
       supabase.from("user_inbox_ai_rules").select("rules_text").eq("user_id", userId).maybeSingle(),
     ]);
     const taskTypes = taskTypesRes.data;
-    const userRulesText = String(rulesRes.data?.rules_text ?? "");
+    const userRulesText =
+      rulesRes.error && isMissingInboxRulesTableError(rulesRes.error.message)
+        ? ""
+        : String(rulesRes.data?.rules_text ?? "");
     const taskTypeHints = (taskTypes ?? []).map((r) => `${String(r.key)}:${String(r.label ?? "")}`);
-    const suggestion =
+    const rawSuggestion =
       (await classifyInboxContentWithAi(content, taskTypeHints, userRulesText)) ?? fallbackInboxSuggestion(content);
+    const suggestion = enforceWeekdayFutureRule(content, rawSuggestion);
     return { status: "ready", suggestion, error: null, checkedAt };
   } catch (error) {
     return {

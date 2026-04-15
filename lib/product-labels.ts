@@ -35,6 +35,7 @@ export const PRODUCT_COPY = {
   plusMenuGedaechtnis: "Eintrag im Gedächtnis",
   /** Globales „+ Neu“-Menü: Einträge (einheitlich mit „Neu…“ / Aktionsformulierung) */
   plusMenuDropdownNeuerTask: "Neuer Task",
+  plusMenuDropdownNeuerEingang: "Neuer Eingang",
   plusMenuDropdownNeueNotiz: "Neue Notiz",
   plusMenuDropdownNeuerKontakt: "Neuer Kontakt",
   plusMenuDropdownKiSparring: "KI-Sparring starten",

@@ -11,6 +11,16 @@ import {
 } from "@/app/(app)/kalender/sync-actions";
 import { fetchPlanerDayEvents, setCalendarEventExcludeFromPlanner } from "@/app/(app)/planer/actions";
 import { cn } from "@/lib/cn";
+import {
+  findNextDueDate,
+  formatDueDateLabel,
+  formatRecurrenceLabel,
+  isRecurrenceRuleDueOn,
+  normalizeRecurrenceRule,
+  WEEKDAY_LABELS,
+  type LegacyPlannerFrequency,
+  type PlannerRecurrenceRule,
+} from "@/lib/planer/recurrence";
 import { TaskFormDialog } from "@/components/tasks/task-form-dialog";
 import { TaskInlineEditor } from "@/components/tasks/task-inline-editor";
 import type { AreaRow, TaskWithRelations } from "@/lib/tasks/types";
@@ -52,7 +62,8 @@ type PlannerTask = {
   durationMinutes: number;
   priority: number;
   relevance: number;
-  frequency?: "taeglich" | "werktags" | "zweimal_woechentlich";
+  frequency?: LegacyPlannerFrequency;
+  recurrenceRule?: PlannerRecurrenceRule;
   kind?: "task" | "standard";
 };
 
@@ -200,11 +211,52 @@ const TASK_LIST_CARD_MIN_PX = 56;
 const TASK_LIST_CARD_MAX_PX = 200;
 const PLANER_STORAGE_KEY = "leif-os.planer.v1";
 const STANDARD_BLOCKS: PlannerTask[] = [
-  { id: "std-emails", title: "E-Mails bearbeiten", durationMinutes: 45, priority: 1, relevance: 9, frequency: "taeglich", kind: "standard" },
-  { id: "std-tickets", title: "Tickets bearbeiten", durationMinutes: 60, priority: 1, relevance: 8, frequency: "werktags", kind: "standard" },
-  { id: "std-ruecksprachen", title: "Rücksprachen", durationMinutes: 30, priority: 2, relevance: 7, frequency: "werktags", kind: "standard" },
-  { id: "std-fibu", title: "Finanzbuchhaltung", durationMinutes: 50, priority: 2, relevance: 7, frequency: "zweimal_woechentlich", kind: "standard" },
+  {
+    id: "std-emails",
+    title: "E-Mails bearbeiten",
+    durationMinutes: 45,
+    priority: 1,
+    relevance: 9,
+    recurrenceRule: { frequency: "daily", interval: 1 },
+    kind: "standard",
+  },
+  {
+    id: "std-tickets",
+    title: "Tickets bearbeiten",
+    durationMinutes: 60,
+    priority: 1,
+    relevance: 8,
+    recurrenceRule: { frequency: "weekly", interval: 1, weekdays: [1, 2, 3, 4, 5] },
+    kind: "standard",
+  },
+  {
+    id: "std-ruecksprachen",
+    title: "Rücksprachen",
+    durationMinutes: 30,
+    priority: 2,
+    relevance: 7,
+    recurrenceRule: { frequency: "weekly", interval: 1, weekdays: [1, 2, 3, 4, 5] },
+    kind: "standard",
+  },
+  {
+    id: "std-fibu",
+    title: "Finanzbuchhaltung",
+    durationMinutes: 50,
+    priority: 2,
+    relevance: 7,
+    recurrenceRule: { frequency: "monthly", interval: 1, mode: "nth_weekday", weekday: 2, nth: 3 },
+    kind: "standard",
+  },
 ];
+
+function normalizeStandardBlock(block: PlannerTask): PlannerTask {
+  return {
+    ...block,
+    kind: "standard",
+    recurrenceRule: normalizeRecurrenceRule(block.recurrenceRule, block.frequency),
+    frequency: undefined,
+  };
+}
 
 function readPlannerStorage(): {
   dayPlans: Record<string, TaskPlacement[]>;
@@ -226,7 +278,7 @@ function readPlannerStorage(): {
       dayPlans: parsed.dayPlans ?? {},
       finalizedByDay: parsed.finalizedByDay ?? {},
       standardBlocks: parsed.standardBlocks?.length
-        ? parsed.standardBlocks.map((b) => ({ ...b, kind: "standard" as const }))
+        ? parsed.standardBlocks.map((b) => normalizeStandardBlock(b))
         : STANDARD_BLOCKS,
     };
   } catch {
@@ -251,10 +303,14 @@ function firstOfMonthIso(iso: string): string {
   return toYmd(new Date(date.getFullYear(), date.getMonth(), 1));
 }
 
-function standardFrequencyLabel(freq: PlannerTask["frequency"]): string {
-  if (freq === "werktags") return "Werktags";
-  if (freq === "zweimal_woechentlich") return "2x pro Woche";
-  return "Täglich";
+function isStandardBlockDueOn(block: PlannerTask, isoDate: string): boolean {
+  const rule = normalizeRecurrenceRule(block.recurrenceRule, block.frequency);
+  return isRecurrenceRuleDueOn(rule, isoDate);
+}
+
+function findNextStandardDueDate(block: PlannerTask, fromIso: string): string | null {
+  const rule = normalizeRecurrenceRule(block.recurrenceRule, block.frequency);
+  return findNextDueDate(rule, fromIso);
 }
 
 function formatPlanningDayShort(iso: string) {
@@ -313,13 +369,6 @@ function primePlannerTransparentDragImage(event: DragEvent<HTMLElement>) {
   event.dataTransfer.setDragImage(plannerTransparentDragCanvas, 0, 0);
 }
 
-function isStandardDueOn(iso: string, freq: PlannerTask["frequency"]): boolean {
-  const day = new Date(`${iso}T12:00:00`).getDay();
-  if (freq === "werktags") return day >= 1 && day <= 5;
-  if (freq === "zweimal_woechentlich") return day === 1 || day === 4;
-  return true;
-}
-
 export function PlanerPageClient({
   initialTasks,
   initialEvents,
@@ -373,7 +422,15 @@ export function PlanerPageClient({
   const [standardTitle, setStandardTitle] = useState("");
   const [standardDescription, setStandardDescription] = useState("");
   const [standardDuration, setStandardDuration] = useState("45");
-  const [standardFrequency, setStandardFrequency] = useState<NonNullable<PlannerTask["frequency"]>>("taeglich");
+  const [standardRecurrenceFrequency, setStandardRecurrenceFrequency] = useState<PlannerRecurrenceRule["frequency"]>("daily");
+  const [standardRecurrenceInterval, setStandardRecurrenceInterval] = useState("1");
+  const [standardWeeklyWeekdays, setStandardWeeklyWeekdays] = useState<number[]>([1]);
+  const [standardMonthlyMode, setStandardMonthlyMode] = useState<"day_of_month" | "nth_weekday">("day_of_month");
+  const [standardMonthlyDay, setStandardMonthlyDay] = useState("15");
+  const [standardMonthlyNth, setStandardMonthlyNth] = useState("3");
+  const [standardMonthlyWeekday, setStandardMonthlyWeekday] = useState("2");
+  const [standardYearlyMonth, setStandardYearlyMonth] = useState("1");
+  const [standardYearlyDay, setStandardYearlyDay] = useState("15");
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [taskDialogMode, setTaskDialogMode] = useState<"create" | "edit">("create");
   const [editingTask, setEditingTask] = useState<TaskWithRelations | null>(null);
@@ -666,8 +723,11 @@ export function PlanerPageClient({
   );
 
   const unplannedStandardBlocks = useMemo(
-    () => standardBlocks.filter((block) => !placementByTaskId[block.id]),
-    [standardBlocks, placementByTaskId],
+    () =>
+      standardBlocks.filter(
+        (block) => isStandardBlockDueOn(block, activeDate) && !placementByTaskId[block.id],
+      ),
+    [standardBlocks, placementByTaskId, activeDate],
   );
 
   useEffect(() => {
@@ -676,7 +736,7 @@ export function PlanerPageClient({
     return () => window.clearTimeout(timer);
   }, [autoPlanFeedback]);
 
-  function canPlaceTask(basePlacements: TaskPlacement[], taskId: string, startSlot: number, slotCount: number) {
+  const canPlaceTask = useCallback((basePlacements: TaskPlacement[], taskId: string, startSlot: number, slotCount: number) => {
     const endSlotExclusive = startSlot + slotCount;
     if (startSlot < 0 || endSlotExclusive > TOTAL_SLOTS) return false;
     for (let slot = startSlot; slot < endSlotExclusive; slot += 1) {
@@ -688,7 +748,7 @@ export function PlanerPageClient({
       const existingEnd = placement.startSlot + placement.slotCount;
       return startSlot < existingEnd && endSlotExclusive > existingStart;
     });
-  }
+  }, [blockedByEvents]);
 
   const dropRangePreview = useMemo(() => {
     if (!draggingTaskId || dropHoverSlot === null) {
@@ -761,15 +821,15 @@ export function PlanerPageClient({
           : (dayPlans[iso]?.length ?? 0) > 0
             ? "in_planung"
             : "offen",
-        dueStandardCount: standardBlocks.filter((block) => isStandardDueOn(iso, block.frequency)).length,
+        dueStandardCount: standardBlocks.filter((block) => isStandardBlockDueOn(block, iso)).length,
         dueStandardMinutes: standardBlocks
-          .filter((block) => isStandardDueOn(iso, block.frequency))
+          .filter((block) => isStandardBlockDueOn(block, iso))
           .reduce((sum, block) => sum + block.durationMinutes, 0),
         plannedMinutes,
         freeMinutes,
         estimatedEffortMinutes:
           standardBlocks
-            .filter((block) => isStandardDueOn(iso, block.frequency))
+            .filter((block) => isStandardBlockDueOn(block, iso))
             .reduce((sum, block) => sum + block.durationMinutes, 0) + unplannedTasksTotalMinutes,
       };
     });
@@ -1153,25 +1213,112 @@ export function PlanerPageClient({
     setAutoPlanning(false);
   }
 
+  function resetStandardRuleEditor(rule?: PlannerRecurrenceRule) {
+    const normalized = normalizeRecurrenceRule(rule, undefined);
+    setStandardRecurrenceFrequency(normalized.frequency);
+    setStandardRecurrenceInterval(String(normalized.interval));
+    if (normalized.frequency === "weekly") {
+      setStandardWeeklyWeekdays(normalized.weekdays);
+    } else {
+      setStandardWeeklyWeekdays([1]);
+    }
+    if (normalized.frequency === "monthly") {
+      setStandardMonthlyMode(normalized.mode);
+      if (normalized.mode === "day_of_month") {
+        setStandardMonthlyDay(String(normalized.day));
+      } else {
+        setStandardMonthlyNth(
+          normalized.nth === "last" || normalized.nth === "penultimate" ? normalized.nth : String(normalized.nth),
+        );
+        setStandardMonthlyWeekday(String(normalized.weekday));
+      }
+    } else {
+      setStandardMonthlyMode("day_of_month");
+      setStandardMonthlyDay("15");
+      setStandardMonthlyNth("3");
+      setStandardMonthlyWeekday("2");
+    }
+    if (normalized.frequency === "yearly") {
+      setStandardYearlyMonth(String(normalized.month));
+      setStandardYearlyDay(String(normalized.day));
+    } else {
+      setStandardYearlyMonth("1");
+      setStandardYearlyDay("15");
+    }
+  }
+
   function openStandardDialog(block?: PlannerTask) {
     if (block) {
+      const normalized = normalizeStandardBlock(block);
       setEditingStandardId(block.id);
       setStandardTitle(block.title);
       setStandardDescription(block.description ?? "");
       setStandardDuration(String(block.durationMinutes));
-      setStandardFrequency(block.frequency ?? "taeglich");
+      resetStandardRuleEditor(normalized.recurrenceRule);
     } else {
       setEditingStandardId(null);
       setStandardTitle("");
       setStandardDescription("");
       setStandardDuration("45");
-      setStandardFrequency("taeglich");
+      resetStandardRuleEditor({ frequency: "daily", interval: 1, start_date: activeDate });
     }
     setStandardDialogOpen(true);
   }
 
+  const buildRuleFromEditor = useCallback((): PlannerRecurrenceRule => {
+    const interval = Math.max(1, Math.floor(Number(standardRecurrenceInterval) || 1));
+    if (standardRecurrenceFrequency === "daily") {
+      return { frequency: "daily", interval, start_date: activeDate };
+    }
+    if (standardRecurrenceFrequency === "weekly") {
+      const weekdays = standardWeeklyWeekdays.length > 0 ? [...standardWeeklyWeekdays].sort((a, b) => a - b) : [1];
+      return { frequency: "weekly", interval, weekdays, start_date: activeDate };
+    }
+    if (standardRecurrenceFrequency === "monthly") {
+      if (standardMonthlyMode === "day_of_month") {
+        return {
+          frequency: "monthly",
+          interval,
+          mode: "day_of_month",
+          day: Math.min(31, Math.max(1, Math.floor(Number(standardMonthlyDay) || 1))),
+          start_date: activeDate,
+        };
+      }
+      return {
+        frequency: "monthly",
+        interval,
+        mode: "nth_weekday",
+        nth:
+          standardMonthlyNth === "last" || standardMonthlyNth === "penultimate"
+            ? standardMonthlyNth
+            : Math.min(5, Math.max(1, Math.floor(Number(standardMonthlyNth) || 1))),
+        weekday: Math.min(6, Math.max(0, Math.floor(Number(standardMonthlyWeekday) || 1))),
+        start_date: activeDate,
+      };
+    }
+    return {
+      frequency: "yearly",
+      interval,
+      month: Math.min(12, Math.max(1, Math.floor(Number(standardYearlyMonth) || 1))),
+      day: Math.min(31, Math.max(1, Math.floor(Number(standardYearlyDay) || 1))),
+      start_date: activeDate,
+    };
+  }, [
+    activeDate,
+    standardMonthlyDay,
+    standardMonthlyMode,
+    standardMonthlyNth,
+    standardMonthlyWeekday,
+    standardRecurrenceFrequency,
+    standardRecurrenceInterval,
+    standardWeeklyWeekdays,
+    standardYearlyDay,
+    standardYearlyMonth,
+  ]);
+
   function saveStandardBlock() {
     const duration = Math.max(15, Number(standardDuration) || 45);
+    const recurrenceRule = buildRuleFromEditor();
     const payload: PlannerTask = {
       id: editingStandardId ?? `std-${crypto.randomUUID()}`,
       title: standardTitle.trim() || "Neuer Standardblock",
@@ -1179,7 +1326,7 @@ export function PlanerPageClient({
       durationMinutes: duration,
       priority: 2,
       relevance: 7,
-      frequency: standardFrequency,
+      recurrenceRule,
       kind: "standard",
     };
     setStandardBlocks((current) =>
@@ -1206,6 +1353,27 @@ export function PlanerPageClient({
     setUnplanCandidateTaskId((current) => (current === deletingId ? null : current));
     setStandardDialogOpen(false);
   }
+
+  const standardRulePreviewLabel = useMemo(() => {
+    const draftRule = buildRuleFromEditor();
+    const previewBlock: PlannerTask = {
+      id: "preview",
+      title: standardTitle.trim() || "Standardblock",
+      durationMinutes: Math.max(15, Number(standardDuration) || 45),
+      priority: 2,
+      relevance: 7,
+      recurrenceRule: draftRule,
+      kind: "standard",
+    };
+    const nextDueIso = findNextStandardDueDate(previewBlock, activeDate);
+    if (!nextDueIso) return "Keine Fälligkeit innerhalb der nächsten 3 Jahre gefunden.";
+    return `Nächste Fälligkeit: ${formatDueDateLabel(nextDueIso)}`;
+  }, [
+    buildRuleFromEditor,
+    standardTitle,
+    standardDuration,
+    activeDate,
+  ]);
 
   return (
     <div
@@ -1666,7 +1834,7 @@ export function PlanerPageClient({
                         {block.title}
                       </h4>
                       <p className="line-clamp-2 text-[10px] leading-snug text-slate-500">
-                        {standardFrequencyLabel(block.frequency)}
+                        {formatRecurrenceLabel(normalizeRecurrenceRule(block.recurrenceRule, block.frequency))}
                         {block.description ? ` · ${block.description}` : ""}
                       </p>
                     </div>
@@ -2319,17 +2487,171 @@ export function PlanerPageClient({
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="font-medium text-leif-secondary">Intervall</span>
+                  <span className="font-medium text-leif-secondary">Wiederholung</span>
                   <select
-                    value={standardFrequency}
-                    onChange={(e) => setStandardFrequency(e.target.value as NonNullable<PlannerTask["frequency"]>)}
+                    value={standardRecurrenceFrequency}
+                    onChange={(e) =>
+                      setStandardRecurrenceFrequency(e.target.value as PlannerRecurrenceRule["frequency"])
+                    }
                     className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
                   >
-                    <option value="taeglich">Täglich</option>
-                    <option value="werktags">Werktags</option>
-                    <option value="zweimal_woechentlich">2x pro Woche</option>
+                    <option value="daily">Täglich</option>
+                    <option value="weekly">Wöchentlich</option>
+                    <option value="monthly">Monatlich</option>
+                    <option value="yearly">Jährlich</option>
                   </select>
                 </label>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-medium text-leif-secondary">Intervall</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={standardRecurrenceInterval}
+                    onChange={(e) => setStandardRecurrenceInterval(e.target.value)}
+                    className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
+                  />
+                </label>
+              </div>
+              {standardRecurrenceFrequency === "weekly" ? (
+                <div className="space-y-1 text-sm">
+                  <span className="font-medium text-leif-secondary">Wochentage</span>
+                  <div className="flex flex-wrap gap-2">
+                    {WEEKDAY_LABELS.map((label, idx) => {
+                      const active = standardWeeklyWeekdays.includes(idx);
+                      return (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() =>
+                            setStandardWeeklyWeekdays((current) => {
+                              if (current.includes(idx)) {
+                                const next = current.filter((d) => d !== idx);
+                                return next.length > 0 ? next : current;
+                              }
+                              return [...current, idx].sort((a, b) => a - b);
+                            })
+                          }
+                          className={cn(
+                            "rounded-md border px-2 py-1 text-xs font-medium transition-colors",
+                            active
+                              ? "border-[#456990] bg-[rgba(69,105,144,0.08)] text-[#456990]"
+                              : "border-slate-200 bg-white text-leif-secondary hover:border-slate-300 hover:text-leif-text",
+                          )}
+                        >
+                          {label.slice(0, 2)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+              {standardRecurrenceFrequency === "monthly" ? (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setStandardMonthlyMode("day_of_month")}
+                      className={cn(
+                        "rounded-md border px-2 py-1 text-xs font-medium transition-colors",
+                        standardMonthlyMode === "day_of_month"
+                          ? "border-[#456990] bg-[rgba(69,105,144,0.08)] text-[#456990]"
+                          : "border-slate-200 bg-white text-leif-secondary hover:border-slate-300 hover:text-leif-text",
+                      )}
+                    >
+                      Am Tag
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStandardMonthlyMode("nth_weekday")}
+                      className={cn(
+                        "rounded-md border px-2 py-1 text-xs font-medium transition-colors",
+                        standardMonthlyMode === "nth_weekday"
+                          ? "border-[#456990] bg-[rgba(69,105,144,0.08)] text-[#456990]"
+                          : "border-slate-200 bg-white text-leif-secondary hover:border-slate-300 hover:text-leif-text",
+                      )}
+                    >
+                      Am n-ten Wochentag
+                    </button>
+                  </div>
+                  {standardMonthlyMode === "day_of_month" ? (
+                    <label className="flex flex-col gap-1 text-sm">
+                      <span className="font-medium text-leif-secondary">Tag des Monats</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={31}
+                        value={standardMonthlyDay}
+                        onChange={(e) => setStandardMonthlyDay(e.target.value)}
+                        className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
+                      />
+                    </label>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="flex flex-col gap-1 text-sm">
+                        <span className="font-medium text-leif-secondary">N-te Woche</span>
+                        <select
+                          value={standardMonthlyNth}
+                          onChange={(e) => setStandardMonthlyNth(e.target.value)}
+                          className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
+                        >
+                          <option value="1">1.</option>
+                          <option value="2">2.</option>
+                          <option value="3">3.</option>
+                          <option value="4">4.</option>
+                          <option value="5">5.</option>
+                          <option value="last">Letzter</option>
+                          <option value="penultimate">Vorletzter</option>
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1 text-sm">
+                        <span className="font-medium text-leif-secondary">Wochentag</span>
+                        <select
+                          value={standardMonthlyWeekday}
+                          onChange={(e) => setStandardMonthlyWeekday(e.target.value)}
+                          className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
+                        >
+                          {WEEKDAY_LABELS.map((label, idx) => (
+                            <option key={label} value={String(idx)}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+              {standardRecurrenceFrequency === "yearly" ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="font-medium text-leif-secondary">Monat</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={standardYearlyMonth}
+                      onChange={(e) => setStandardYearlyMonth(e.target.value)}
+                      className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="font-medium text-leif-secondary">Tag</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={standardYearlyDay}
+                      onChange={(e) => setStandardYearlyDay(e.target.value)}
+                      className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
+                    />
+                  </label>
+                </div>
+              ) : null}
+              <div className="rounded-md border border-leif-border bg-leif-canvas/60 px-3 py-2 text-xs text-leif-secondary">
+                {standardRulePreviewLabel}
               </div>
             </div>
             <div className="mt-4 flex items-center justify-between gap-2">
