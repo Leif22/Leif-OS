@@ -65,6 +65,7 @@ export function fallbackInboxSuggestion(content: string): InboxAiSuggestion {
 export async function classifyInboxContentWithAi(
   content: string,
   taskTypeHints: string[],
+  userRulesText: string,
 ): Promise<InboxAiSuggestion | null> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) return null;
@@ -81,6 +82,9 @@ export async function classifyInboxContentWithAi(
     "note-Felder: type, description, document_id.",
     "title ist immer kurz und konkret (max 120 Zeichen).",
     `Erlaubte task_type Hinweise: ${taskTypeHints.join(", ") || "keine Vorgabe"}.`,
+    userRulesText.trim()
+      ? `Benutzerregeln (hoch priorisiert, sofern nicht im Widerspruch zum Inhalt): ${userRulesText.trim()}`
+      : "Keine benutzerdefinierten Regeln hinterlegt.",
     "Wenn unklar: tool=task, confidence<=0.45 und konservative Defaults.",
   ].join(" ");
   try {
@@ -112,13 +116,19 @@ export async function buildInboxSuggestion(
 ): Promise<{ status: "ready" | "failed"; suggestion: InboxAiSuggestion | null; error: string | null; checkedAt: string }> {
   const checkedAt = new Date().toISOString();
   try {
-    const { data: taskTypes } = await supabase
-      .from("user_task_types")
-      .select("key,label")
-      .eq("user_id", userId)
-      .order("sort_order", { ascending: true });
+    const [taskTypesRes, rulesRes] = await Promise.all([
+      supabase
+        .from("user_task_types")
+        .select("key,label")
+        .eq("user_id", userId)
+        .order("sort_order", { ascending: true }),
+      supabase.from("user_inbox_ai_rules").select("rules_text").eq("user_id", userId).maybeSingle(),
+    ]);
+    const taskTypes = taskTypesRes.data;
+    const userRulesText = String(rulesRes.data?.rules_text ?? "");
     const taskTypeHints = (taskTypes ?? []).map((r) => `${String(r.key)}:${String(r.label ?? "")}`);
-    const suggestion = (await classifyInboxContentWithAi(content, taskTypeHints)) ?? fallbackInboxSuggestion(content);
+    const suggestion =
+      (await classifyInboxContentWithAi(content, taskTypeHints, userRulesText)) ?? fallbackInboxSuggestion(content);
     return { status: "ready", suggestion, error: null, checkedAt };
   } catch (error) {
     return {

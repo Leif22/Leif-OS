@@ -1,6 +1,7 @@
 import { OutlookSection } from "@/components/einstellungen/outlook-section";
 import { TaskTypesSection } from "@/components/einstellungen/task-types-section";
 import { TelegramSection } from "@/components/einstellungen/telegram-section";
+import { InboxAiRulesSection } from "@/components/einstellungen/inbox-ai-rules-section";
 import { buttonClassName } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { PRODUCT_COPY, PRODUCT_LABEL } from "@/lib/product-labels";
@@ -31,7 +32,7 @@ export default async function EinstellungenPage() {
     .select("telegram_username, linked_at")
     .eq("user_id", user.id)
     .maybeSingle();
-  const [msTok, calPlannerPref, taskTypesRes] = await Promise.all([
+  const [msTok, calPlannerPref, taskTypesRes, aiRulesRes] = await Promise.all([
     supabase.from("microsoft_oauth_tokens").select("user_id").eq("user_id", user.id).maybeSingle(),
     supabase
       .from("user_calendar_planner_prefs")
@@ -39,6 +40,7 @@ export default async function EinstellungenPage() {
       .eq("user_id", user.id)
       .maybeSingle(),
     fetchTaskTypesForUser(supabase, user.id),
+    supabase.from("user_inbox_ai_rules").select("rules_text").eq("user_id", user.id).maybeSingle(),
   ]);
 
   return (
@@ -50,6 +52,7 @@ export default async function EinstellungenPage() {
           calPlannerPref.data?.outlook_sync_exclude_new_by_default,
         )}
       />
+      <InboxAiRulesSection initialRules={String(aiRulesRes.data?.rules_text ?? "")} />
       <TaskTypesSection taskTypes={taskTypesRes.taskTypes} loadError={taskTypesRes.error} />
       <TelegramSection link={link ?? null} />
     </div>

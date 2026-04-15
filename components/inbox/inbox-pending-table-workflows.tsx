@@ -396,8 +396,9 @@ export function InboxPendingTableWithWorkflows({
   }
 
   function suggestedToolForItem(item: InboxListItem): InlineEditKind {
-    const suggestion =
-      !rejectedById[item.id] && aiSuggestionById[item.id] ? aiSuggestionById[item.id] : inlinePrefillById[item.id];
+    const isRejected = rejectedById[item.id] ?? item.ai_suggestion_rejected;
+    const persistedSuggestion = aiSuggestionById[item.id] ?? item.ai_suggestion;
+    const suggestion = !isRejected && persistedSuggestion ? persistedSuggestion : inlinePrefillById[item.id];
     const suggested = suggestion?.tool;
     if (suggested === "calendar" || suggested === "note" || suggested === "task") return suggested;
     return "task";
@@ -759,8 +760,9 @@ export function InboxPendingTableWithWorkflows({
   function renderInlineEditor(item: InboxListItem): ReactNode {
     if (!inlineEdit || inlineEdit.itemId !== item.id) return null;
     const busy = busyId === item.id;
-    const suggestion =
-      !rejectedById[item.id] && aiSuggestionById[item.id] ? aiSuggestionById[item.id] : inlinePrefillById[item.id];
+    const isRejected = rejectedById[item.id] ?? item.ai_suggestion_rejected;
+    const persistedSuggestion = aiSuggestionById[item.id] ?? item.ai_suggestion;
+    const suggestion = !isRejected && persistedSuggestion ? persistedSuggestion : inlinePrefillById[item.id];
     if (inlineEdit.kind === "task") {
       return (
         <form
@@ -1171,8 +1173,9 @@ export function InboxPendingTableWithWorkflows({
                 const exiting = exitingIds.has(item.id);
                 const isInlineOpen = inlineEdit?.itemId === item.id;
                 const activeInlineKind = isInlineOpen ? inlineEdit?.kind : null;
-                const suggestion = aiSuggestionById[item.id];
-                const hasActiveSuggestion = Boolean(suggestion) && !rejectedById[item.id];
+                const suggestion = aiSuggestionById[item.id] ?? item.ai_suggestion;
+                const isRejected = rejectedById[item.id] ?? item.ai_suggestion_rejected;
+                const hasActiveSuggestion = Boolean(suggestion) && !isRejected;
                 const stop = (e: MouseEvent<HTMLButtonElement>) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1419,8 +1422,9 @@ export function InboxPendingTableWithWorkflows({
                 const hasOpenPicker = actionPickerItem !== null;
                 const isInlineOpen = inlineEdit?.itemId === item.id;
                 const activeInlineKind = isInlineOpen ? inlineEdit?.kind : null;
-                const suggestion = aiSuggestionById[item.id];
-                const hasActiveSuggestion = Boolean(suggestion) && !rejectedById[item.id];
+                const suggestion = aiSuggestionById[item.id] ?? item.ai_suggestion;
+                const isRejected = rejectedById[item.id] ?? item.ai_suggestion_rejected;
+                const hasActiveSuggestion = Boolean(suggestion) && !isRejected;
                 const isLeadCard = index === 0 && !hasOpenPicker && !isPickerForItem;
                 const contentBits = splitInboxContent(item.content);
                 const stop = (e: MouseEvent<HTMLButtonElement>) => {

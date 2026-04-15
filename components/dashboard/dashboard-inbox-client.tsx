@@ -9,7 +9,6 @@ import type { TaskTypeRow } from "@/lib/task-types/defaults";
 import type { AreaRow } from "@/lib/tasks/types";
 import { PRODUCT_LABEL } from "@/lib/product-labels";
 import { Inbox } from "lucide-react";
-import { useEffect, useState } from "react";
 
 type Props = {
   userId: string;
@@ -35,12 +34,6 @@ export function DashboardInboxClient({
   const showBadge = openCount != null && openCount > 0 && !loadError;
   const pending = items.map(dashboardInboxItemToFull);
   const progressPct = progress.todayTotal > 0 ? Math.max(0, Math.min(100, Math.round((progress.todayDone / progress.todayTotal) * 100))) : 0;
-  const [counterAnim, setCounterAnim] = useState(false);
-  useEffect(() => {
-    setCounterAnim(true);
-    const t = window.setTimeout(() => setCounterAnim(false), 150);
-    return () => window.clearTimeout(t);
-  }, [openCount]);
 
   const combinedError = loadError ?? areasLoadError;
 
@@ -59,7 +52,7 @@ export function DashboardInboxClient({
         </h2>
         {showBadge ? (
           <span
-            className={`inline-flex min-h-7 min-w-7 items-center justify-center rounded-full bg-leif-success/12 px-2.5 text-sm font-medium tabular-nums text-leif-success transition-all duration-150 ${counterAnim ? "-translate-y-0.5 opacity-90" : "translate-y-0 opacity-100"}`}
+            className="inline-flex min-h-7 min-w-7 items-center justify-center rounded-full bg-leif-success/12 px-2.5 text-sm font-medium tabular-nums text-leif-success"
             aria-label={`${openCount} offen`}
           >
             {openCount}

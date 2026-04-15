@@ -34,6 +34,12 @@ export type DashboardInboxItem = {
   content: string;
   source: string;
   source_ref: string | null;
+  metadata: Record<string, unknown>;
+  ai_status?: "pending" | "ready" | "rejected" | "failed";
+  ai_error?: string | null;
+  ai_suggestion: InboxAiSuggestion | null;
+  ai_suggestion_rejected: boolean;
+  ai_suggestion_checked: boolean;
   created_at: string;
 };
 
