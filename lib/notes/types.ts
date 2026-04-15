@@ -8,6 +8,7 @@ export type NoteRow = {
   area_id: string | null;
   source_sparring_chat_id: string | null;
   source_inbox_item_id: string | null;
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 };

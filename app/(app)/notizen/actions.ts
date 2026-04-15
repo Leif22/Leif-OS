@@ -68,6 +68,7 @@ export async function createNote(
       content: input.content.trim(),
       type: input.type,
       area_id: input.area_id || null,
+      deleted_at: null,
       source_sparring_chat_id: sparId,
     })
     .select("id")
@@ -127,7 +128,11 @@ export async function deleteNote(id: string): Promise<{ ok: true } | { ok: false
   const { data: userData, error: userErr } = await supabase.auth.getUser();
   if (userErr || !userData.user) return { ok: false, error: "Nicht angemeldet." };
 
-  const { error } = await supabase.from("notes").delete().eq("id", id).eq("user_id", userData.user.id);
+  const { error } = await supabase
+    .from("notes")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("user_id", userData.user.id);
 
   if (error) return { ok: false, error: error.message };
   revalidate();

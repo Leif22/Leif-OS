@@ -41,7 +41,7 @@ export default async function NotizenPage({ searchParams }: PageProps) {
     );
   }
 
-  const [{ notes, error: notesErr }, areasRes] = await Promise.all([
+  const [{ notes, deletedNotes, error: notesErr }, areasRes] = await Promise.all([
     fetchNotesForUser(supabase, user.id),
     supabase.from("areas").select("id, name, sort_order").eq("user_id", user.id).order("sort_order"),
   ]);
@@ -89,6 +89,7 @@ export default async function NotizenPage({ searchParams }: PageProps) {
     >
       <NotizenPageClient
         notes={notes}
+        deletedNotes={deletedNotes}
         areas={areas}
         loadError={loadError}
         initialDialog={initialDialog}

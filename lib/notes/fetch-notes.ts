@@ -8,16 +8,16 @@ function isNoteType(s: string): s is NoteType {
 export async function fetchNotesForUser(
   supabase: SupabaseClient,
   userId: string,
-): Promise<{ notes: NoteListItem[]; error: string | null }> {
+): Promise<{ notes: NoteListItem[]; deletedNotes: NoteListItem[]; error: string | null }> {
   const { data, error } = await supabase
     .from("notes")
-    .select("id, user_id, content, type, area_id, source_sparring_chat_id, source_inbox_item_id, created_at, updated_at, areas(name)")
+    .select("id, user_id, content, type, area_id, source_sparring_chat_id, source_inbox_item_id, deleted_at, created_at, updated_at, areas(name)")
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
 
-  if (error) return { notes: [], error: error.message };
+  if (error) return { notes: [], deletedNotes: [], error: error.message };
 
-  const notes: NoteListItem[] = (data ?? []).map((row) => {
+  const allNotes: NoteListItem[] = (data ?? []).map((row) => {
     const r = row as Record<string, unknown>;
     const areas = r.areas as { name?: string } | { name?: string }[] | null;
     const areaName = Array.isArray(areas)
@@ -33,11 +33,14 @@ export async function fetchNotesForUser(
       area_id: r.area_id == null ? null : String(r.area_id),
       source_sparring_chat_id: r.source_sparring_chat_id == null ? null : String(r.source_sparring_chat_id),
       source_inbox_item_id: r.source_inbox_item_id == null ? null : String(r.source_inbox_item_id),
+      deleted_at: r.deleted_at == null ? null : String(r.deleted_at),
       created_at: String(r.created_at ?? ""),
       updated_at: String(r.updated_at ?? ""),
       area_name: areaName,
     };
   });
 
-  return { notes, error: null };
+  const notes = allNotes.filter((note) => !note.deleted_at);
+  const deletedNotes = allNotes.filter((note) => Boolean(note.deleted_at));
+  return { notes, deletedNotes, error: null };
 }

@@ -1201,8 +1201,7 @@ export function InboxPendingTableWithWorkflows({
                         onClick={() => {
                           if (b) return;
                           if (typeof window !== "undefined" && window.getSelection()?.toString().trim()) return;
-                          if (hasActiveSuggestion) return;
-                          toggleInlineEdit(item, "task");
+                          toggleInlineEdit(item);
                         }}
                         className="min-w-0 flex-1 cursor-pointer px-3 py-2.5 text-left transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50 sm:pr-24"
                       >
@@ -1457,8 +1456,7 @@ export function InboxPendingTableWithWorkflows({
                         onClick={() => {
                           if (b) return;
                           if (typeof window !== "undefined" && window.getSelection()?.toString().trim()) return;
-                          if (hasActiveSuggestion) return;
-                          toggleInlineEdit(item, "task");
+                          toggleInlineEdit(item);
                         }}
                         className={cn(
                           "min-w-0 flex-1 cursor-pointer text-left transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50 sm:pr-24",

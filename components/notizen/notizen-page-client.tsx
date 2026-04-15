@@ -10,11 +10,13 @@ import type { NoteListItem, NoteType } from "@/lib/notes/types";
 import { PRODUCT_COPY, PRODUCT_LABEL } from "@/lib/product-labels";
 import type { SparringNotizPrefill } from "@/lib/sparring/note-prefill";
 import type { AreaRow } from "@/lib/tasks/types";
+import { ChevronDown, Trash2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 type Props = {
   notes: NoteListItem[];
+  deletedNotes: NoteListItem[];
   areas: AreaRow[];
   loadError: string | null;
   initialDialog: "none" | "create" | "edit";
@@ -43,6 +45,7 @@ function typeLabel(t: NoteType): string {
 
 export function NotizenPageClient({
   notes,
+  deletedNotes,
   areas,
   loadError,
   initialDialog,
@@ -64,6 +67,7 @@ export function NotizenPageClient({
   const [sourceSparringChatId, setSourceSparringChatId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [deletedOpen, setDeletedOpen] = useState(false);
 
   useEffect(() => {
     const el = dialogRef.current;
@@ -192,6 +196,23 @@ export function NotizenPageClient({
     }
   }
 
+  async function onQuickDelete(noteId: string) {
+    if (!window.confirm("Notiz wirklich löschen?")) return;
+    setPending(true);
+    setError(null);
+    try {
+      const res = await deleteNote(noteId);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      router.replace(pathname, { scroll: false });
+      router.refresh();
+    } finally {
+      setPending(false);
+    }
+  }
+
   if (loadError) {
     return <AlertBanner variant="error">Notizen konnten nicht geladen werden: {loadError}</AlertBanner>;
   }
@@ -222,12 +243,15 @@ export function NotizenPageClient({
               <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-leif-muted">
                 Aktualisiert
               </th>
+              <th className="w-12 px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wide text-leif-muted">
+                Aktion
+              </th>
             </tr>
           </thead>
           <tbody>
             {notes.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-10 text-center text-sm text-leif-muted">
+                <td colSpan={5} className="px-4 py-10 text-center text-sm text-leif-muted">
                   Noch keine Notizen.
                 </td>
               </tr>
@@ -242,12 +266,53 @@ export function NotizenPageClient({
                   <td className="px-4 py-3 text-leif-secondary">{typeLabel(n.type)}</td>
                   <td className="px-4 py-3 text-leif-secondary">{n.area_name ?? "—"}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-xs text-leif-muted">{formatWhen(n.updated_at)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      disabled={pending}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void onQuickDelete(n.id);
+                      }}
+                      className="inline-flex size-7 items-center justify-center rounded-md border border-leif-border/80 text-leif-muted transition-colors hover:bg-leif-divider/60 hover:text-leif-text disabled:opacity-60"
+                      aria-label="Notiz löschen"
+                      title="Notiz löschen"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </TableShell>
+
+      <div className="rounded-lg border border-leif-border bg-white px-4 py-3">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-2 text-left text-sm font-medium text-leif-secondary"
+          onClick={() => setDeletedOpen((open) => !open)}
+          aria-expanded={deletedOpen}
+        >
+          <span>Gelöschte Notizen ({deletedNotes.length})</span>
+          <ChevronDown className={`size-4 transition-transform ${deletedOpen ? "rotate-180" : ""}`} />
+        </button>
+        {deletedOpen ? (
+          deletedNotes.length === 0 ? (
+            <p className="pt-3 text-sm text-leif-muted">Keine gelöschten Notizen.</p>
+          ) : (
+            <ul className="mt-3 divide-y divide-leif-divider border-t border-leif-divider">
+              {deletedNotes.map((n) => (
+                <li key={n.id} className="py-2">
+                  <p className="text-sm text-leif-text">{clip(n.content, 120)}</p>
+                  <p className="mt-1 text-xs text-leif-muted">Gelöscht/aktualisiert: {formatWhen(n.updated_at)}</p>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : null}
+      </div>
 
       <dialog
         ref={dialogRef}
