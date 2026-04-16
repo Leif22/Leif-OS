@@ -16,6 +16,8 @@ import { insertSparringChatFromInbox } from "@/lib/sparring/insert-chat";
 export async function createInboxItemFromTaskDraft(input: {
   title: string;
   description?: string | null;
+  /** UI-Herkunft für Metadaten (z. B. Header vs. „+ Neu“). */
+  createdFrom?: string;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const title = input.title.trim();
   const description = String(input.description ?? "").trim();
@@ -43,7 +45,7 @@ export async function createInboxItemFromTaskDraft(input: {
       ai_checked_at: suggestion.checkedAt,
       ai_error: suggestion.error,
       metadata: {
-        created_from: "global_plus_menu",
+        created_from: input.createdFrom?.trim() || "global_plus_menu",
         target_type: "task",
       },
     })

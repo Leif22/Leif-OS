@@ -19,6 +19,12 @@ export type RecommendationFeedbackInput = {
   chosen_task_id?: string | null;
 };
 
+/** `recommendation_log`-Spalten numeric(4,2) / score numeric(6,4) — sicher begrenzen. */
+function clampRecommendationScoreField(v: unknown): number {
+  const n = typeof v === "number" && Number.isFinite(v) ? v : 0;
+  return Math.round(Math.min(99.99, Math.max(-99.99, n)) * 100) / 100;
+}
+
 async function insertRecommendationLog(
   supabase: SupabaseClient,
   userId: string,
@@ -27,11 +33,11 @@ async function insertRecommendationLog(
   const { error } = await supabase.from("recommendation_log").insert({
     user_id: userId,
     recommended_task_id: input.recommended_task_id,
-    score: input.score,
-    score_priority: input.score_priority,
-    score_due: input.score_due,
-    score_today: input.score_today,
-    score_age: input.score_age,
+    score: clampRecommendationScoreField(input.score),
+    score_priority: clampRecommendationScoreField(input.score_priority),
+    score_due: clampRecommendationScoreField(input.score_due),
+    score_today: clampRecommendationScoreField(input.score_today),
+    score_age: clampRecommendationScoreField(input.score_age),
     action: input.action,
     chosen_task_id: input.chosen_task_id ?? null,
   });
@@ -265,6 +271,26 @@ export async function updateTask(
   const taskType = await resolveTaskTypeForUser(supabase, user.id, p.task_type);
   const projectId = await resolveProjectForUser(supabase, user.id, p.project_id);
 
+  const { data: existing, error: fetchErr } = await supabase
+    .from("tasks")
+    .select("planned_date, completed_at, status")
+    .eq("id", taskId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (fetchErr || !existing) {
+    return { ok: false, error: fetchErr?.message ?? "Task nicht gefunden." };
+  }
+
+  const prevPlan = existing.planned_date ? String(existing.planned_date).trim() : null;
+  const nextPlan = p.planned_date ? String(p.planned_date).trim() : null;
+  const planChanged = prevPlan !== nextPlan;
+  const nextStatus =
+    existing.completed_at != null
+      ? String(existing.status)
+      : planChanged
+        ? "open"
+        : String(existing.status);
+
   const { error: updErr } = await supabase
     .from("tasks")
     .update({
@@ -277,6 +303,7 @@ export async function updateTask(
       estimated_minutes: p.estimated_minutes,
       document_id: p.document_id,
       project_id: projectId,
+      status: nextStatus,
     })
     .eq("id", taskId)
     .eq("user_id", user.id);
@@ -296,6 +323,8 @@ export async function updateTask(
 
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
+  revalidatePath("/planer");
+  revalidatePath("/kalender");
   return { ok: true };
 }
 
@@ -305,6 +334,7 @@ function revalidateTaskSurfaces() {
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
   revalidatePath("/planer");
+  revalidatePath("/kalender");
 }
 
 /** Schnellaktion Liste / Review: als erledigt markieren. */
@@ -335,7 +365,7 @@ export async function quickTaskMoveToToday(taskId: string): Promise<QuickActionR
       completed_at: null,
       planned_date: today,
       due_date: today,
-      status: "planned",
+      status: "open",
     })
     .eq("id", taskId)
     .eq("user_id", userData.user.id);
@@ -356,7 +386,7 @@ export async function quickTaskMoveToTomorrow(taskId: string): Promise<QuickActi
       completed_at: null,
       planned_date: tomorrow,
       due_date: tomorrow,
-      status: "planned",
+      status: "open",
     })
     .eq("id", taskId)
     .eq("user_id", userData.user.id);
@@ -407,7 +437,7 @@ export async function quickTaskReplan(
       completed_at: null,
       planned_date: planned,
       due_date: due,
-      status: "planned",
+      status: "open",
     })
     .eq("id", taskId)
     .eq("user_id", userData.user.id);

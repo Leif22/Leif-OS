@@ -12,15 +12,15 @@ import {
 import { fetchPlanerDayEvents, setCalendarEventExcludeFromPlanner } from "@/app/(app)/planer/actions";
 import { cn } from "@/lib/cn";
 import {
-  findNextDueDate,
-  formatDueDateLabel,
   formatRecurrenceLabel,
   isRecurrenceRuleDueOn,
   normalizeRecurrenceRule,
-  WEEKDAY_LABELS,
   type LegacyPlannerFrequency,
   type PlannerRecurrenceRule,
 } from "@/lib/planer/recurrence";
+import type { PlannerStandardPaletteItem } from "@/lib/planer/fetch-planner-standard-blocks";
+import { PLANER_STORAGE_KEY, readPlannerStorage } from "@/lib/planer/planner-storage";
+import Link from "next/link";
 import { TaskFormDialog } from "@/components/tasks/task-form-dialog";
 import { TaskInlineEditor } from "@/components/tasks/task-inline-editor";
 import type { AreaRow, TaskWithRelations } from "@/lib/tasks/types";
@@ -35,6 +35,7 @@ import {
   type DragEvent,
   type FormEvent,
 } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import type { CalendarEventFormPayload, CalendarEventRow } from "@/lib/calendar/types";
 import { Button } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/control-styles";
@@ -209,46 +210,6 @@ const PLANNER_BLOCK_LAYER_LEFT = `calc(0.75rem + ${PLANNER_TIME_COL_PX}px + 0.75
 /** List cards: hybrid height from duration, min for taps, max to avoid huge blocks; snapped to slot row height. */
 const TASK_LIST_CARD_MIN_PX = 56;
 const TASK_LIST_CARD_MAX_PX = 200;
-const PLANER_STORAGE_KEY = "leif-os.planer.v1";
-const STANDARD_BLOCKS: PlannerTask[] = [
-  {
-    id: "std-emails",
-    title: "E-Mails bearbeiten",
-    durationMinutes: 45,
-    priority: 1,
-    relevance: 9,
-    recurrenceRule: { frequency: "daily", interval: 1 },
-    kind: "standard",
-  },
-  {
-    id: "std-tickets",
-    title: "Tickets bearbeiten",
-    durationMinutes: 60,
-    priority: 1,
-    relevance: 8,
-    recurrenceRule: { frequency: "weekly", interval: 1, weekdays: [1, 2, 3, 4, 5] },
-    kind: "standard",
-  },
-  {
-    id: "std-ruecksprachen",
-    title: "Rücksprachen",
-    durationMinutes: 30,
-    priority: 2,
-    relevance: 7,
-    recurrenceRule: { frequency: "weekly", interval: 1, weekdays: [1, 2, 3, 4, 5] },
-    kind: "standard",
-  },
-  {
-    id: "std-fibu",
-    title: "Finanzbuchhaltung",
-    durationMinutes: 50,
-    priority: 2,
-    relevance: 7,
-    recurrenceRule: { frequency: "monthly", interval: 1, mode: "nth_weekday", weekday: 2, nth: 3 },
-    kind: "standard",
-  },
-];
-
 function normalizeStandardBlock(block: PlannerTask): PlannerTask {
   return {
     ...block,
@@ -256,34 +217,6 @@ function normalizeStandardBlock(block: PlannerTask): PlannerTask {
     recurrenceRule: normalizeRecurrenceRule(block.recurrenceRule, block.frequency),
     frequency: undefined,
   };
-}
-
-function readPlannerStorage(): {
-  dayPlans: Record<string, TaskPlacement[]>;
-  finalizedByDay: Record<string, boolean>;
-  standardBlocks: PlannerTask[];
-} {
-  if (typeof window === "undefined") {
-    return { dayPlans: {}, finalizedByDay: {}, standardBlocks: STANDARD_BLOCKS };
-  }
-  try {
-    const raw = window.localStorage.getItem(PLANER_STORAGE_KEY);
-    if (!raw) return { dayPlans: {}, finalizedByDay: {}, standardBlocks: STANDARD_BLOCKS };
-    const parsed = JSON.parse(raw) as {
-      dayPlans?: Record<string, TaskPlacement[]>;
-      finalizedByDay?: Record<string, boolean>;
-      standardBlocks?: PlannerTask[];
-    };
-    return {
-      dayPlans: parsed.dayPlans ?? {},
-      finalizedByDay: parsed.finalizedByDay ?? {},
-      standardBlocks: parsed.standardBlocks?.length
-        ? parsed.standardBlocks.map((b) => normalizeStandardBlock(b))
-        : STANDARD_BLOCKS,
-    };
-  } catch {
-    return { dayPlans: {}, finalizedByDay: {}, standardBlocks: STANDARD_BLOCKS };
-  }
 }
 
 function toYmd(date: Date) {
@@ -306,11 +239,6 @@ function firstOfMonthIso(iso: string): string {
 function isStandardBlockDueOn(block: PlannerTask, isoDate: string): boolean {
   const rule = normalizeRecurrenceRule(block.recurrenceRule, block.frequency);
   return isRecurrenceRuleDueOn(rule, isoDate);
-}
-
-function findNextStandardDueDate(block: PlannerTask, fromIso: string): string | null {
-  const rule = normalizeRecurrenceRule(block.recurrenceRule, block.frequency);
-  return findNextDueDate(rule, fromIso);
 }
 
 function formatPlanningDayShort(iso: string) {
@@ -371,23 +299,39 @@ function primePlannerTransparentDragImage(event: DragEvent<HTMLElement>) {
 
 export function PlanerPageClient({
   initialTasks,
+  initialStandardBlocks,
+  standardBlocksLoadError = null,
   initialEvents,
   editableTasks,
   taskAreas,
+  embedInCalendar = false,
+  calendarAnchorDate = null,
 }: {
   initialTasks: PlannerTask[];
+  initialStandardBlocks: PlannerStandardPaletteItem[];
+  standardBlocksLoadError?: string | null;
   initialEvents: CalendarEventRow[];
   editableTasks: TaskWithRelations[];
   taskAreas: AreaRow[];
+  embedInCalendar?: boolean;
+  calendarAnchorDate?: string | null;
 }) {
-  const [mode, setMode] = useState<"overview" | "planning">("overview");
-  const [dayPreset, setDayPreset] = useState<PlanDayPreset>("today");
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const router = useRouter();
+  const pathname = usePathname();
+  const [mode, setMode] = useState<"overview" | "planning">(() => (embedInCalendar ? "planning" : "overview"));
+  const [dayPreset, setDayPreset] = useState<PlanDayPreset>(() => (embedInCalendar ? "date" : "today"));
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const anchor = calendarAnchorDate?.trim();
+    if (embedInCalendar && anchor && /^\d{4}-\d{2}-\d{2}$/.test(anchor)) return anchor;
+    return new Date().toISOString().slice(0, 10);
+  });
   const [overviewMonthIso, setOverviewMonthIso] = useState(() => firstOfMonthIso(new Date().toISOString().slice(0, 10)));
   /** Empty until client hydration — avoids SSR/localStorage mismatch (hydration errors). */
   const [dayPlans, setDayPlans] = useState<Record<string, TaskPlacement[]>>(() => ({}));
   const [finalizedByDay, setFinalizedByDay] = useState<Record<string, boolean>>(() => ({}));
-  const [standardBlocks, setStandardBlocks] = useState<PlannerTask[]>(() => [...STANDARD_BLOCKS]);
+  const [standardBlocks, setStandardBlocks] = useState<PlannerTask[]>(() =>
+    initialStandardBlocks.map((b) => normalizeStandardBlock({ ...b, kind: "standard" as const })),
+  );
   const [storageHydrated, setStorageHydrated] = useState(false);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [dropHoverSlot, setDropHoverSlot] = useState<number | null>(null);
@@ -417,20 +361,8 @@ export function PlanerPageClient({
   const [calDlgPending, setCalDlgPending] = useState(false);
   const [calDlgError, setCalDlgError] = useState<string | null>(null);
   const [autoPlanning, setAutoPlanning] = useState(false);
-  const [standardDialogOpen, setStandardDialogOpen] = useState(false);
-  const [editingStandardId, setEditingStandardId] = useState<string | null>(null);
-  const [standardTitle, setStandardTitle] = useState("");
-  const [standardDescription, setStandardDescription] = useState("");
-  const [standardDuration, setStandardDuration] = useState("45");
-  const [standardRecurrenceFrequency, setStandardRecurrenceFrequency] = useState<PlannerRecurrenceRule["frequency"]>("daily");
-  const [standardRecurrenceInterval, setStandardRecurrenceInterval] = useState("1");
-  const [standardWeeklyWeekdays, setStandardWeeklyWeekdays] = useState<number[]>([1]);
-  const [standardMonthlyMode, setStandardMonthlyMode] = useState<"day_of_month" | "nth_weekday">("day_of_month");
-  const [standardMonthlyDay, setStandardMonthlyDay] = useState("15");
-  const [standardMonthlyNth, setStandardMonthlyNth] = useState("3");
-  const [standardMonthlyWeekday, setStandardMonthlyWeekday] = useState("2");
-  const [standardYearlyMonth, setStandardYearlyMonth] = useState("1");
-  const [standardYearlyDay, setStandardYearlyDay] = useState("15");
+  /** Separater Auto-Plan-Entwurf für den aktiven Tag; `null` = kein Entwurf (Anzeige = gespeicherte `dayPlans`). */
+  const [autoPlanDraft, setAutoPlanDraft] = useState<TaskPlacement[] | null>(null);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [taskDialogMode, setTaskDialogMode] = useState<"create" | "edit">("create");
   const [editingTask, setEditingTask] = useState<TaskWithRelations | null>(null);
@@ -500,13 +432,61 @@ export function PlanerPageClient({
   const placements = useMemo(() => dayPlans[activeDate] ?? [], [dayPlans, activeDate]);
   const isDayFinalized = Boolean(finalizedByDay[activeDate]);
 
+  const effectivePlacements = useMemo(
+    () => (autoPlanDraft !== null ? autoPlanDraft : placements),
+    [autoPlanDraft, placements],
+  );
+
+  const effectiveDayPlans = useMemo(() => {
+    if (autoPlanDraft === null) return dayPlans;
+    return { ...dayPlans, [activeDate]: autoPlanDraft };
+  }, [dayPlans, activeDate, autoPlanDraft]);
+
+  useEffect(() => {
+    setAutoPlanDraft(null);
+  }, [activeDate]);
+
   useEffect(() => {
     const persisted = readPlannerStorage();
     setDayPlans(persisted.dayPlans);
     setFinalizedByDay(persisted.finalizedByDay);
-    setStandardBlocks(persisted.standardBlocks);
     setStorageHydrated(true);
   }, []);
+
+  useEffect(() => {
+    setStandardBlocks(
+      initialStandardBlocks.map((b) => normalizeStandardBlock({ ...b, kind: "standard" as const })),
+    );
+  }, [initialStandardBlocks]);
+
+  const plannerItemsRef = useRef(plannerItems);
+  plannerItemsRef.current = plannerItems;
+  const validPlannerItemIdsKey = useMemo(
+    () =>
+      [...plannerItems.map((t) => t.id)].sort().join(","),
+    [plannerItems],
+  );
+
+  useEffect(() => {
+    if (!storageHydrated) return;
+    const valid = new Set(plannerItemsRef.current.map((t) => t.id));
+    const prune = (list: TaskPlacement[]) => list.filter((p) => valid.has(p.taskId));
+    setDayPlans((current) => {
+      let changed = false;
+      const next: Record<string, TaskPlacement[]> = {};
+      for (const [day, list] of Object.entries(current)) {
+        const filtered = prune(list);
+        if (filtered.length !== list.length) changed = true;
+        next[day] = filtered;
+      }
+      return changed ? next : current;
+    });
+    setAutoPlanDraft((draft) => {
+      if (draft === null) return null;
+      const filtered = prune(draft);
+      return filtered.length !== draft.length ? filtered : draft;
+    });
+  }, [validPlannerItemIdsKey, storageHydrated]);
 
   useEffect(() => {
     if (!storageHydrated) return;
@@ -516,13 +496,12 @@ export function PlanerPageClient({
         JSON.stringify({
           dayPlans,
           finalizedByDay,
-          standardBlocks,
         }),
       );
     } catch {
       // Ignore storage errors (private mode/quota).
     }
-  }, [dayPlans, finalizedByDay, standardBlocks, storageHydrated]);
+  }, [dayPlans, finalizedByDay, storageHydrated]);
 
   const planningHeaderDate = useMemo(() => {
     const source = new Date(`${activeDate}T12:00:00`);
@@ -537,14 +516,14 @@ export function PlanerPageClient({
 
   const occupancyBySlot = useMemo(() => {
     const bySlot: Record<number, string> = {};
-    for (const placement of placements) {
+    for (const placement of effectivePlacements) {
       for (let offset = 0; offset < placement.slotCount; offset += 1) {
         const slot = placement.startSlot + offset;
         bySlot[slot] = placement.taskId;
       }
     }
     return bySlot;
-  }, [placements]);
+  }, [effectivePlacements]);
 
   const eventBlocks = useMemo(() => {
     const startMinutes = START_HOUR * 60;
@@ -633,7 +612,7 @@ export function PlanerPageClient({
     const workEndSlotExclusive = (WORK_END_HOUR - START_HOUR) * SLOTS_PER_HOUR;
     const occupied = new Set<number>();
 
-    for (const placement of placements) {
+    for (const placement of effectivePlacements) {
       for (let i = 0; i < placement.slotCount; i += 1) {
         const slot = placement.startSlot + i;
         if (slot >= workStartSlot && slot < workEndSlotExclusive) occupied.add(slot);
@@ -648,7 +627,7 @@ export function PlanerPageClient({
     }
 
     return occupied.size * SLOT_MINUTES;
-  }, [placements, eventBlocks]);
+  }, [effectivePlacements, eventBlocks]);
 
   const freeMinutes = Math.max(0, DAY_CAPACITY_MINUTES - plannedMinutesForHeader);
   const utilizationRatio = plannedMinutesForHeader / DAY_CAPACITY_MINUTES;
@@ -668,14 +647,14 @@ export function PlanerPageClient({
   const progressPercent = Math.min(utilizationRatio, 1.15) * 100;
 
   const placementByTaskId = useMemo(
-    () => Object.fromEntries(placements.map((placement) => [placement.taskId, placement])),
-    [placements],
+    () => Object.fromEntries(effectivePlacements.map((placement) => [placement.taskId, placement])),
+    [effectivePlacements],
   );
   const taskStatusById = useMemo(() => {
     const status: Record<string, TaskStatus> = {};
     for (const task of tasks) status[task.id] = "ungeplant";
 
-    for (const [day, dayPlacements] of Object.entries(dayPlans)) {
+    for (const [day, dayPlacements] of Object.entries(effectiveDayPlans)) {
       const finalized = Boolean(finalizedByDay[day]);
       for (const placement of dayPlacements) {
         const current = status[placement.taskId];
@@ -685,18 +664,18 @@ export function PlanerPageClient({
     }
 
     return status;
-  }, [tasks, dayPlans, finalizedByDay]);
+  }, [tasks, effectiveDayPlans, finalizedByDay]);
 
   const taskOpenPlanningDayById = useMemo(() => {
     const map: Record<string, string> = {};
-    for (const [day, dayPlacements] of Object.entries(dayPlans)) {
+    for (const [day, dayPlacements] of Object.entries(effectiveDayPlans)) {
       if (finalizedByDay[day]) continue;
       for (const p of dayPlacements) {
         if (map[p.taskId] === undefined) map[p.taskId] = day;
       }
     }
     return map;
-  }, [dayPlans, finalizedByDay]);
+  }, [effectiveDayPlans, finalizedByDay]);
 
   type PlanningSidebarEntry = { task: PlannerTask; mode: "free" | "reserved_elsewhere"; reservedOnIso?: string };
 
@@ -757,9 +736,9 @@ export function PlanerPageClient({
     const t = plannerItemsById[draggingTaskId];
     if (!t) return { start: null, count: 0, valid: false };
     const count = Math.max(1, Math.ceil(t.durationMinutes / SLOT_MINUTES));
-    const valid = canPlaceTask(placements, draggingTaskId, dropHoverSlot, count);
+    const valid = canPlaceTask(effectivePlacements, draggingTaskId, dropHoverSlot, count);
     return { start: dropHoverSlot, count, valid };
-  }, [draggingTaskId, dropHoverSlot, placements, plannerItemsById, blockedByEvents]);
+  }, [draggingTaskId, dropHoverSlot, effectivePlacements, plannerItemsById, canPlaceTask]);
 
   const calendarDragPreview = useMemo(() => {
     if (!draggingTaskId || dropRangePreview.start === null || !dropRangePreview.count) return null;
@@ -792,7 +771,7 @@ export function PlanerPageClient({
 
   const hoverSuggestion =
     hoveredTaskId && taskStatusById[hoveredTaskId] === "ungeplant" && !placementByTaskId[hoveredTaskId]
-      ? findNextFreeStartSlot(hoveredTaskId, placements)
+      ? findNextFreeStartSlot(hoveredTaskId, effectivePlacements)
       : null;
   const unplannedTasksTotalMinutes = useMemo(
     () => freePlanningTasks.reduce((sum, task) => sum + task.durationMinutes, 0),
@@ -804,7 +783,7 @@ export function PlanerPageClient({
       const date = new Date(today);
       date.setDate(today.getDate() + offset);
       const iso = toYmd(date);
-      const plannedMinutes = (dayPlans[iso] ?? []).reduce((sum, placement) => {
+      const plannedMinutes = (effectiveDayPlans[iso] ?? []).reduce((sum, placement) => {
         const item = plannerItemsById[placement.taskId];
         return sum + (item?.durationMinutes ?? placement.slotCount * SLOT_MINUTES);
       }, 0);
@@ -818,7 +797,7 @@ export function PlanerPageClient({
         }),
         planningStatus: finalizedByDay[iso]
           ? "geplant"
-          : (dayPlans[iso]?.length ?? 0) > 0
+          : (effectiveDayPlans[iso]?.length ?? 0) > 0
             ? "in_planung"
             : "offen",
         dueStandardCount: standardBlocks.filter((block) => isStandardBlockDueOn(block, iso)).length,
@@ -833,7 +812,7 @@ export function PlanerPageClient({
             .reduce((sum, block) => sum + block.durationMinutes, 0) + unplannedTasksTotalMinutes,
       };
     });
-  }, [dayPlans, finalizedByDay, plannerItemsById, standardBlocks, unplannedTasksTotalMinutes]);
+  }, [effectiveDayPlans, finalizedByDay, plannerItemsById, standardBlocks, unplannedTasksTotalMinutes]);
   const unplannedDays = useMemo(() => calendarDays.filter((day) => day.planningStatus !== "geplant"), [calendarDays]);
   const bestDayIso = useMemo(() => {
     if (unplannedDays.length === 0) return null;
@@ -866,12 +845,12 @@ export function PlanerPageClient({
         day: dayNumber,
         planningStatus: finalizedByDay[iso]
           ? "geplant"
-          : (dayPlans[iso]?.length ?? 0) > 0
+          : (effectiveDayPlans[iso]?.length ?? 0) > 0
             ? "in_planung"
             : "offen",
       };
     });
-  }, [overviewMonthIso, dayPlans, finalizedByDay]);
+  }, [overviewMonthIso, effectiveDayPlans, finalizedByDay]);
 
   const reloadDayEvents = useCallback(async () => {
     const res = await fetchPlanerDayEvents(activeDate);
@@ -1054,16 +1033,49 @@ export function PlanerPageClient({
     return () => window.clearInterval(id);
   }, [runPlannerHybridSync]);
 
+  const goPlanningDay = useCallback(
+    (iso: string) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return;
+      setSelectedDate(iso);
+      setDayPreset("date");
+      setOverviewMonthIso(firstOfMonthIso(iso));
+      if (embedInCalendar) {
+        const path = pathname || "/kalender";
+        const sp = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+        sp.set("v", "day");
+        sp.set("d", iso);
+        sp.set("plan", "planen");
+        router.push(`${path}?${sp.toString()}`);
+      }
+    },
+    [embedInCalendar, pathname, router],
+  );
+
+  useEffect(() => {
+    if (!embedInCalendar) return;
+    const anchor = calendarAnchorDate?.trim();
+    if (!anchor || !/^\d{4}-\d{2}-\d{2}$/.test(anchor)) return;
+    setSelectedDate(anchor);
+    setDayPreset("date");
+    setOverviewMonthIso(firstOfMonthIso(anchor));
+  }, [embedInCalendar, calendarAnchorDate]);
+
   function handleDropTask(startSlot: number, taskId: string) {
     if (isDayFinalized) return false;
     const task = plannerItemsById[taskId];
     if (!task) return false;
 
     const slotCount = Math.ceil(task.durationMinutes / SLOT_MINUTES);
-    if (!canPlaceTask(placements, taskId, startSlot, slotCount)) return false;
+    const base = effectivePlacements;
+    if (!canPlaceTask(base, taskId, startSlot, slotCount)) return false;
 
-    const withoutTask = placements.filter((placement) => placement.taskId !== taskId);
-    setDayPlans((current) => ({ ...current, [activeDate]: [...withoutTask, { taskId, startSlot, slotCount }] }));
+    const withoutTask = base.filter((placement) => placement.taskId !== taskId);
+    const next = [...withoutTask, { taskId, startSlot, slotCount }];
+    if (autoPlanDraft !== null) {
+      setAutoPlanDraft(next);
+    } else {
+      setDayPlans((current) => ({ ...current, [activeDate]: next }));
+    }
     setProposal(null);
     setHoveredTaskId(null);
     setInlineNotice(null);
@@ -1077,9 +1089,7 @@ export function PlanerPageClient({
     window.setTimeout(() => {
       setDayClickFlashIso((current) => (current === iso ? null : current));
     }, 280);
-    setSelectedDate(iso);
-    setOverviewMonthIso(firstOfMonthIso(iso));
-    setDayPreset("date");
+    goPlanningDay(iso);
     setMode("planning");
     setInlineNotice(null);
   }
@@ -1101,10 +1111,14 @@ export function PlanerPageClient({
 
   function handleUnplanTask(taskId: string) {
     if (isDayFinalized) return;
-    setDayPlans((current) => ({
-      ...current,
-      [activeDate]: (current[activeDate] ?? []).filter((placement) => placement.taskId !== taskId),
-    }));
+    if (autoPlanDraft !== null) {
+      setAutoPlanDraft((draft) => (draft === null ? null : draft.filter((placement) => placement.taskId !== taskId)));
+    } else {
+      setDayPlans((current) => ({
+        ...current,
+        [activeDate]: (current[activeDate] ?? []).filter((placement) => placement.taskId !== taskId),
+      }));
+    }
     setDropHoverSlot(null);
     setProposal(null);
     setInlineNotice(null);
@@ -1118,10 +1132,14 @@ export function PlanerPageClient({
       );
       return;
     }
-    setDayPlans((current) => ({
-      ...current,
-      [dayIso]: (current[dayIso] ?? []).filter((placement) => placement.taskId !== taskId),
-    }));
+    if (dayIso === activeDate && autoPlanDraft !== null) {
+      setAutoPlanDraft((draft) => (draft === null ? null : draft.filter((placement) => placement.taskId !== taskId)));
+    } else {
+      setDayPlans((current) => ({
+        ...current,
+        [dayIso]: (current[dayIso] ?? []).filter((placement) => placement.taskId !== taskId),
+      }));
+    }
     setProposal((p) => (p?.taskId === taskId ? null : p));
     setDraggingTaskId((d) => (d === taskId ? null : d));
     setHoveredTaskId((h) => (h === taskId ? null : h));
@@ -1132,10 +1150,17 @@ export function PlanerPageClient({
 
   function clearDayPlan() {
     if (isDayFinalized) return;
-    setDayPlans((current) => ({ ...current, [activeDate]: [] }));
-    setProposal(null);
-    setUnplanCandidateTaskId(null);
-    setInlineNotice("Alle eingeplanten Tasks wurden entfernt.");
+    if (autoPlanDraft !== null) {
+      setAutoPlanDraft([]);
+      setProposal(null);
+      setUnplanCandidateTaskId(null);
+      setInlineNotice("Entwurf geleert — übernehmen speichert einen leeren Tag, oder Entwurf verwerfen.");
+    } else {
+      setDayPlans((current) => ({ ...current, [activeDate]: [] }));
+      setProposal(null);
+      setUnplanCandidateTaskId(null);
+      setInlineNotice("Alle eingeplanten Tasks wurden entfernt.");
+    }
   }
 
   function startTaskDrag(taskId: string, event: DragEvent<HTMLElement>) {
@@ -1188,13 +1213,14 @@ export function PlanerPageClient({
         ...workingPlacements.filter((placement) => placement.taskId !== task.id),
         { taskId: task.id, startSlot: nextFree.startSlot, slotCount: nextFree.slotCount },
       ];
-      setDayPlans((current) => ({ ...current, [activeDate]: [...workingPlacements] }));
+      setAutoPlanDraft([...workingPlacements]);
       plannedCount += 1;
       await wait(180);
     }
 
     const notPlannedCount = candidates.length - plannedCount;
     if (plannedCount === 0) {
+      setAutoPlanDraft(null);
       setAutoPlanFeedback({ tone: "info", message: "Kein passender Zeitraum frei." });
       setInlineNotice("Kein passender Zeitraum frei");
     } else if (notPlannedCount > 0) {
@@ -1204,176 +1230,35 @@ export function PlanerPageClient({
           ? "1 Block passt heute nicht mehr rein."
           : `${notPlannedCount} Blöcke passen heute nicht mehr rein.`;
       setAutoPlanFeedback({ tone: "info", message: `${plannedLabel}, ${remainingLabel}` });
-      setInlineNotice(`Nicht alle Tasks konnten eingeplant werden (${notPlannedCount} übrig).`);
+      setInlineNotice(
+        `Planungsentwurf: ${notPlannedCount} Task(s) passen nicht mehr in den Tag. Anpassen, übernehmen oder verwerfen.`,
+      );
     } else {
       const plannedLabel = plannedCount === 1 ? "1 Block eingeplant" : `${plannedCount} Blöcke eingeplant`;
-      setAutoPlanFeedback({ tone: "success", message: `${plannedLabel}. Alles passt in den Tag.` });
-      setInlineNotice("Tag automatisch eingeplant.");
+      setAutoPlanFeedback({ tone: "success", message: `${plannedLabel}. Entwurf prüfen und übernehmen.` });
+      setInlineNotice("Planungsentwurf erstellt — mit „Entwurf übernehmen“ speichern oder anpassen.");
     }
     setAutoPlanning(false);
   }
 
-  function resetStandardRuleEditor(rule?: PlannerRecurrenceRule) {
-    const normalized = normalizeRecurrenceRule(rule, undefined);
-    setStandardRecurrenceFrequency(normalized.frequency);
-    setStandardRecurrenceInterval(String(normalized.interval));
-    if (normalized.frequency === "weekly") {
-      setStandardWeeklyWeekdays(normalized.weekdays);
-    } else {
-      setStandardWeeklyWeekdays([1]);
-    }
-    if (normalized.frequency === "monthly") {
-      setStandardMonthlyMode(normalized.mode);
-      if (normalized.mode === "day_of_month") {
-        setStandardMonthlyDay(String(normalized.day));
-      } else {
-        setStandardMonthlyNth(
-          normalized.nth === "last" || normalized.nth === "penultimate" ? normalized.nth : String(normalized.nth),
-        );
-        setStandardMonthlyWeekday(String(normalized.weekday));
-      }
-    } else {
-      setStandardMonthlyMode("day_of_month");
-      setStandardMonthlyDay("15");
-      setStandardMonthlyNth("3");
-      setStandardMonthlyWeekday("2");
-    }
-    if (normalized.frequency === "yearly") {
-      setStandardYearlyMonth(String(normalized.month));
-      setStandardYearlyDay(String(normalized.day));
-    } else {
-      setStandardYearlyMonth("1");
-      setStandardYearlyDay("15");
-    }
+  function commitAutoPlanDraft() {
+    if (autoPlanDraft === null) return;
+    setDayPlans((current) => ({ ...current, [activeDate]: autoPlanDraft }));
+    setAutoPlanDraft(null);
+    setProposal(null);
+    setUnplanCandidateTaskId(null);
+    setAutoPlanFeedback(null);
+    setInlineNotice("Planungsentwurf übernommen und gespeichert.");
   }
 
-  function openStandardDialog(block?: PlannerTask) {
-    if (block) {
-      const normalized = normalizeStandardBlock(block);
-      setEditingStandardId(block.id);
-      setStandardTitle(block.title);
-      setStandardDescription(block.description ?? "");
-      setStandardDuration(String(block.durationMinutes));
-      resetStandardRuleEditor(normalized.recurrenceRule);
-    } else {
-      setEditingStandardId(null);
-      setStandardTitle("");
-      setStandardDescription("");
-      setStandardDuration("45");
-      resetStandardRuleEditor({ frequency: "daily", interval: 1, start_date: activeDate });
-    }
-    setStandardDialogOpen(true);
+  function discardAutoPlanDraft() {
+    if (autoPlanDraft === null) return;
+    setAutoPlanDraft(null);
+    setProposal(null);
+    setUnplanCandidateTaskId(null);
+    setAutoPlanFeedback(null);
+    setInlineNotice("Planungsentwurf verworfen — gespeicherte Planung unverändert.");
   }
-
-  const buildRuleFromEditor = useCallback((): PlannerRecurrenceRule => {
-    const interval = Math.max(1, Math.floor(Number(standardRecurrenceInterval) || 1));
-    if (standardRecurrenceFrequency === "daily") {
-      return { frequency: "daily", interval, start_date: activeDate };
-    }
-    if (standardRecurrenceFrequency === "weekly") {
-      const weekdays = standardWeeklyWeekdays.length > 0 ? [...standardWeeklyWeekdays].sort((a, b) => a - b) : [1];
-      return { frequency: "weekly", interval, weekdays, start_date: activeDate };
-    }
-    if (standardRecurrenceFrequency === "monthly") {
-      if (standardMonthlyMode === "day_of_month") {
-        return {
-          frequency: "monthly",
-          interval,
-          mode: "day_of_month",
-          day: Math.min(31, Math.max(1, Math.floor(Number(standardMonthlyDay) || 1))),
-          start_date: activeDate,
-        };
-      }
-      return {
-        frequency: "monthly",
-        interval,
-        mode: "nth_weekday",
-        nth:
-          standardMonthlyNth === "last" || standardMonthlyNth === "penultimate"
-            ? standardMonthlyNth
-            : Math.min(5, Math.max(1, Math.floor(Number(standardMonthlyNth) || 1))),
-        weekday: Math.min(6, Math.max(0, Math.floor(Number(standardMonthlyWeekday) || 1))),
-        start_date: activeDate,
-      };
-    }
-    return {
-      frequency: "yearly",
-      interval,
-      month: Math.min(12, Math.max(1, Math.floor(Number(standardYearlyMonth) || 1))),
-      day: Math.min(31, Math.max(1, Math.floor(Number(standardYearlyDay) || 1))),
-      start_date: activeDate,
-    };
-  }, [
-    activeDate,
-    standardMonthlyDay,
-    standardMonthlyMode,
-    standardMonthlyNth,
-    standardMonthlyWeekday,
-    standardRecurrenceFrequency,
-    standardRecurrenceInterval,
-    standardWeeklyWeekdays,
-    standardYearlyDay,
-    standardYearlyMonth,
-  ]);
-
-  function saveStandardBlock() {
-    const duration = Math.max(15, Number(standardDuration) || 45);
-    const recurrenceRule = buildRuleFromEditor();
-    const payload: PlannerTask = {
-      id: editingStandardId ?? `std-${crypto.randomUUID()}`,
-      title: standardTitle.trim() || "Neuer Standardblock",
-      description: standardDescription.trim() || undefined,
-      durationMinutes: duration,
-      priority: 2,
-      relevance: 7,
-      recurrenceRule,
-      kind: "standard",
-    };
-    setStandardBlocks((current) =>
-      editingStandardId
-        ? current.map((b) => (b.id === editingStandardId ? payload : b))
-        : [...current, payload],
-    );
-    setStandardDialogOpen(false);
-  }
-
-  function deleteStandardBlock() {
-    if (!editingStandardId) return;
-    const deletingId = editingStandardId;
-    setStandardBlocks((current) => current.filter((b) => b.id !== deletingId));
-    setDayPlans((current) =>
-      Object.fromEntries(
-        Object.entries(current).map(([day, placementsForDay]) => [
-          day,
-          placementsForDay.filter((p) => p.taskId !== deletingId),
-        ]),
-      ),
-    );
-    setProposal((current) => (current?.taskId === deletingId ? null : current));
-    setUnplanCandidateTaskId((current) => (current === deletingId ? null : current));
-    setStandardDialogOpen(false);
-  }
-
-  const standardRulePreviewLabel = useMemo(() => {
-    const draftRule = buildRuleFromEditor();
-    const previewBlock: PlannerTask = {
-      id: "preview",
-      title: standardTitle.trim() || "Standardblock",
-      durationMinutes: Math.max(15, Number(standardDuration) || 45),
-      priority: 2,
-      relevance: 7,
-      recurrenceRule: draftRule,
-      kind: "standard",
-    };
-    const nextDueIso = findNextStandardDueDate(previewBlock, activeDate);
-    if (!nextDueIso) return "Keine Fälligkeit innerhalb der nächsten 3 Jahre gefunden.";
-    return `Nächste Fälligkeit: ${formatDueDateLabel(nextDueIso)}`;
-  }, [
-    buildRuleFromEditor,
-    standardTitle,
-    standardDuration,
-    activeDate,
-  ]);
 
   return (
     <div
@@ -1556,6 +1441,9 @@ export function PlanerPageClient({
         </>
       ) : (
         <div className="space-y-1.5">
+          {standardBlocksLoadError ? (
+            <AlertBanner variant="error">Standardblöcke konnten nicht geladen werden: {standardBlocksLoadError}</AlertBanner>
+          ) : null}
           <div className="border-b border-leif-border pb-0">
             <div className="space-y-1">
               <button
@@ -1627,6 +1515,24 @@ export function PlanerPageClient({
             </div>
           ) : null}
 
+          {autoPlanDraft !== null ? (
+            <div className="rounded-md border border-amber-300/90 bg-amber-50 px-3 py-2.5 text-sm text-amber-950 shadow-sm">
+              <p className="font-semibold">Planungsentwurf aktiv</p>
+              <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
+                Der automatische Plan ist noch nicht gespeichert. Du kannst Blöcke verschieben oder entfernen — erst
+                „Entwurf übernehmen“ schreibt in die gespeicherte Tagesplanung.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button type="button" size="sm" onClick={() => commitAutoPlanDraft()}>
+                  Entwurf übernehmen
+                </Button>
+                <Button type="button" size="sm" variant="secondary" onClick={() => discardAutoPlanDraft()}>
+                  Entwurf verwerfen
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="grid grid-cols-1 gap-y-2 lg:grid-cols-12 lg:items-center lg:gap-x-8">
             <div className="flex flex-wrap items-center gap-2 lg:col-span-8">
               <button
@@ -1649,12 +1555,12 @@ export function PlanerPageClient({
                 onClick={() => {
                   clearDayPlan();
                 }}
-                disabled={isDayFinalized || placements.length === 0}
+                disabled={isDayFinalized || effectivePlacements.length === 0}
                 title="Alle Tasks aus dem Kalender entfernen"
                 aria-label="Alle Tasks aus dem Kalender entfernen"
                 className={cn(
                   "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border text-red-600 transition-colors",
-                  isDayFinalized || placements.length === 0
+                  isDayFinalized || effectivePlacements.length === 0
                     ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
                     : "border-red-200 bg-red-50 hover:border-red-300 hover:bg-red-100",
                 )}
@@ -1670,6 +1576,12 @@ export function PlanerPageClient({
             <div className="flex justify-start lg:col-span-4 lg:justify-end">
               <button
                 type="button"
+                disabled={!isDayFinalized && autoPlanDraft !== null}
+                title={
+                  !isDayFinalized && autoPlanDraft !== null
+                    ? "Zuerst Planungsentwurf übernehmen oder verwerfen."
+                    : undefined
+                }
                 onClick={() =>
                   setFinalizedByDay((current) => ({
                     ...current,
@@ -1678,9 +1590,11 @@ export function PlanerPageClient({
                 }
                 className={cn(
                   "inline-flex h-9 shrink-0 items-center justify-center rounded-md border px-3 text-sm font-semibold transition-colors",
-                  isDayFinalized
-                    ? "border-slate-300 bg-white text-[#456990] hover:border-slate-400 hover:bg-slate-50"
-                    : "border-[#456990] bg-[#456990] text-white hover:bg-[#456990]/90",
+                  !isDayFinalized && autoPlanDraft !== null
+                    ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                    : isDayFinalized
+                      ? "border-slate-300 bg-white text-[#456990] hover:border-slate-400 hover:bg-slate-50"
+                      : "border-[#456990] bg-[#456990] text-white hover:bg-[#456990]/90",
                 )}
               >
                 {isDayFinalized ? "Planung bearbeiten" : "Planung durchführen"}
@@ -1691,14 +1605,14 @@ export function PlanerPageClient({
           <div className="mt-6 grid grid-cols-1 gap-x-0 gap-y-2.5 lg:grid-cols-12 lg:gap-x-8 lg:gap-y-2.5 lg:items-stretch">
             <div className="order-3 flex min-h-9 items-center justify-between lg:order-none lg:col-span-4 lg:col-start-9 lg:row-start-1">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-leif-secondary">Standardblöcke</h3>
-              <button
-                type="button"
-                onClick={() => openStandardDialog()}
+              <Link
+                href="/einstellungen#standard-bloecke"
                 className="rounded-md border border-leif-border bg-leif-surface p-1 text-leif-secondary transition-colors hover:text-leif-text"
-                aria-label="Standardblock hinzufügen"
+                aria-label="Standardblöcke in Einstellungen verwalten"
+                title="In Einstellungen anlegen oder bearbeiten"
               >
                 <Plus className="h-4 w-4" />
-              </button>
+              </Link>
             </div>
             <div className="order-1 flex min-h-9 flex-wrap items-center justify-between gap-x-2 gap-y-2 lg:order-none lg:col-span-8 lg:col-start-1 lg:row-start-1">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-leif-secondary">Tageskalender</h3>
@@ -1713,7 +1627,15 @@ export function PlanerPageClient({
                     <button
                       key={option.value}
                       type="button"
-                      onClick={() => setDayPreset(option.value as PlanDayPreset)}
+                      onClick={() => {
+                        if (embedInCalendar) {
+                          const todayIso = toYmd(new Date());
+                          const iso = option.value === "today" ? todayIso : addDaysToIso(todayIso, 1);
+                          goPlanningDay(iso);
+                          return;
+                        }
+                        setDayPreset(option.value as PlanDayPreset);
+                      }}
                       className={cn(
                         "rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors",
                         isActive
@@ -1730,8 +1652,9 @@ export function PlanerPageClient({
                   type="date"
                   value={selectedDate}
                   onChange={(event) => {
-                    setSelectedDate(event.target.value);
-                    setDayPreset("date");
+                    const next = event.target.value;
+                    if (!/^\d{4}-\d{2}-\d{2}$/.test(next)) return;
+                    goPlanningDay(next);
                   }}
                   className="sr-only"
                   tabIndex={-1}
@@ -1766,8 +1689,7 @@ export function PlanerPageClient({
                 <button
                   type="button"
                   onClick={() => {
-                    setSelectedDate((d) => addDaysToIso(d, -1));
-                    setDayPreset("date");
+                    goPlanningDay(addDaysToIso(selectedDate, -1));
                   }}
                   className="shrink-0 rounded-md border border-slate-200 bg-white p-1 text-leif-secondary transition-colors hover:border-slate-300 hover:text-leif-text"
                   title="Vorheriger Tag"
@@ -1778,8 +1700,7 @@ export function PlanerPageClient({
                 <button
                   type="button"
                   onClick={() => {
-                    setSelectedDate((d) => addDaysToIso(d, 1));
-                    setDayPreset("date");
+                    goPlanningDay(addDaysToIso(selectedDate, 1));
                   }}
                   className="shrink-0 rounded-md border border-slate-200 bg-white p-1 text-leif-secondary transition-colors hover:border-slate-300 hover:text-leif-text"
                   title="Nächster Tag"
@@ -1808,7 +1729,7 @@ export function PlanerPageClient({
                       if (!planned) setInlineNotice("Kein passender Zeitraum frei");
                       return;
                     }
-                    const nextFree = findNextFreeStartSlot(block.id, placements);
+                    const nextFree = findNextFreeStartSlot(block.id, effectivePlacements);
                     if (!nextFree) {
                       setProposal(null);
                       setInlineNotice("Kein passender Zeitraum frei");
@@ -1843,16 +1764,13 @@ export function PlanerPageClient({
                     </span>
                   </div>
                   <div className="flex shrink-0 items-center border-t border-transparent pt-0.5">
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        openStandardDialog(block);
-                      }}
+                    <Link
+                      href="/einstellungen#standard-bloecke"
+                      onClick={(event) => event.stopPropagation()}
                       className="text-xs font-medium text-leif-secondary opacity-0 transition-opacity underline-offset-2 group-hover:opacity-100 hover:text-leif-text hover:underline focus:opacity-100"
                     >
-                      Einstellungen
-                    </button>
+                      In Einstellungen
+                    </Link>
                   </div>
                 </article>
                 );
@@ -1907,7 +1825,7 @@ export function PlanerPageClient({
                       return;
                     }
 
-                    const nextFree = findNextFreeStartSlot(task.id, placements);
+                    const nextFree = findNextFreeStartSlot(task.id, effectivePlacements);
                     if (!nextFree) {
                       setProposal(null);
                       setInlineNotice("Kein passender Zeitraum frei");
@@ -1942,7 +1860,7 @@ export function PlanerPageClient({
                 <div className="flex min-h-0 flex-1 items-start gap-2">
                   <h4
                     className={cn(
-                      "min-w-0 flex-1 text-sm font-semibold leading-snug line-clamp-3 [overflow-wrap:anywhere]",
+                      "min-w-0 flex-1 truncate whitespace-nowrap text-sm font-semibold leading-snug",
                       isFree ? "text-leif-text" : "text-leif-secondary",
                     )}
                   >
@@ -2266,7 +2184,7 @@ export function PlanerPageClient({
                   </div>
                 );
               })}
-              {placements.map((placement) => {
+              {effectivePlacements.map((placement) => {
                 const task = plannerItemsById[placement.taskId];
                 if (!task) return null;
                 const top = placement.startSlot * SLOT_ROW_HEIGHT_PX;
@@ -2292,6 +2210,7 @@ export function PlanerPageClient({
                       isDayFinalized ? "cursor-not-allowed" : "",
                       isUnplanCandidate ? "bg-leif-primary-soft/35 border-leif-primary/50" : "",
                       isDragged ? "opacity-70" : "",
+                      autoPlanDraft !== null ? "ring-2 ring-amber-400/70" : "",
                     )}
                     style={{ top: `${top}px`, height: `${Math.max(height, SLOT_ROW_HEIGHT_PX)}px`, left: PLANNER_BLOCK_LAYER_LEFT }}
                   >
@@ -2447,241 +2366,6 @@ export function PlanerPageClient({
                 </div>
               </div>
             </form>
-          </div>
-        </div>
-      ) : null}
-      {standardDialogOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="w-full max-w-md rounded-xl border border-leif-border bg-leif-surface p-4 shadow-[var(--leif-shadow)]">
-            <h3 className="text-base font-semibold text-leif-text">
-              {editingStandardId ? "Standardblock bearbeiten" : "Standardblock anlegen"}
-            </h3>
-            <div className="mt-3 space-y-3">
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-leif-secondary">Titel</span>
-                <input
-                  value={standardTitle}
-                  onChange={(e) => setStandardTitle(e.target.value)}
-                  className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-leif-secondary">Beschreibung</span>
-                <textarea
-                  value={standardDescription}
-                  onChange={(e) => setStandardDescription(e.target.value)}
-                  rows={3}
-                  className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
-                />
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="flex flex-col gap-1 text-sm">
-                  <span className="font-medium text-leif-secondary">Dauer (min)</span>
-                  <input
-                    type="number"
-                    min={15}
-                    step={5}
-                    value={standardDuration}
-                    onChange={(e) => setStandardDuration(e.target.value)}
-                    className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-sm">
-                  <span className="font-medium text-leif-secondary">Wiederholung</span>
-                  <select
-                    value={standardRecurrenceFrequency}
-                    onChange={(e) =>
-                      setStandardRecurrenceFrequency(e.target.value as PlannerRecurrenceRule["frequency"])
-                    }
-                    className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
-                  >
-                    <option value="daily">Täglich</option>
-                    <option value="weekly">Wöchentlich</option>
-                    <option value="monthly">Monatlich</option>
-                    <option value="yearly">Jährlich</option>
-                  </select>
-                </label>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="flex flex-col gap-1 text-sm">
-                  <span className="font-medium text-leif-secondary">Intervall</span>
-                  <input
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={standardRecurrenceInterval}
-                    onChange={(e) => setStandardRecurrenceInterval(e.target.value)}
-                    className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
-                  />
-                </label>
-              </div>
-              {standardRecurrenceFrequency === "weekly" ? (
-                <div className="space-y-1 text-sm">
-                  <span className="font-medium text-leif-secondary">Wochentage</span>
-                  <div className="flex flex-wrap gap-2">
-                    {WEEKDAY_LABELS.map((label, idx) => {
-                      const active = standardWeeklyWeekdays.includes(idx);
-                      return (
-                        <button
-                          key={label}
-                          type="button"
-                          onClick={() =>
-                            setStandardWeeklyWeekdays((current) => {
-                              if (current.includes(idx)) {
-                                const next = current.filter((d) => d !== idx);
-                                return next.length > 0 ? next : current;
-                              }
-                              return [...current, idx].sort((a, b) => a - b);
-                            })
-                          }
-                          className={cn(
-                            "rounded-md border px-2 py-1 text-xs font-medium transition-colors",
-                            active
-                              ? "border-[#456990] bg-[rgba(69,105,144,0.08)] text-[#456990]"
-                              : "border-slate-200 bg-white text-leif-secondary hover:border-slate-300 hover:text-leif-text",
-                          )}
-                        >
-                          {label.slice(0, 2)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : null}
-              {standardRecurrenceFrequency === "monthly" ? (
-                <div className="space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setStandardMonthlyMode("day_of_month")}
-                      className={cn(
-                        "rounded-md border px-2 py-1 text-xs font-medium transition-colors",
-                        standardMonthlyMode === "day_of_month"
-                          ? "border-[#456990] bg-[rgba(69,105,144,0.08)] text-[#456990]"
-                          : "border-slate-200 bg-white text-leif-secondary hover:border-slate-300 hover:text-leif-text",
-                      )}
-                    >
-                      Am Tag
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStandardMonthlyMode("nth_weekday")}
-                      className={cn(
-                        "rounded-md border px-2 py-1 text-xs font-medium transition-colors",
-                        standardMonthlyMode === "nth_weekday"
-                          ? "border-[#456990] bg-[rgba(69,105,144,0.08)] text-[#456990]"
-                          : "border-slate-200 bg-white text-leif-secondary hover:border-slate-300 hover:text-leif-text",
-                      )}
-                    >
-                      Am n-ten Wochentag
-                    </button>
-                  </div>
-                  {standardMonthlyMode === "day_of_month" ? (
-                    <label className="flex flex-col gap-1 text-sm">
-                      <span className="font-medium text-leif-secondary">Tag des Monats</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={31}
-                        value={standardMonthlyDay}
-                        onChange={(e) => setStandardMonthlyDay(e.target.value)}
-                        className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
-                      />
-                    </label>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="flex flex-col gap-1 text-sm">
-                        <span className="font-medium text-leif-secondary">N-te Woche</span>
-                        <select
-                          value={standardMonthlyNth}
-                          onChange={(e) => setStandardMonthlyNth(e.target.value)}
-                          className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
-                        >
-                          <option value="1">1.</option>
-                          <option value="2">2.</option>
-                          <option value="3">3.</option>
-                          <option value="4">4.</option>
-                          <option value="5">5.</option>
-                          <option value="last">Letzter</option>
-                          <option value="penultimate">Vorletzter</option>
-                        </select>
-                      </label>
-                      <label className="flex flex-col gap-1 text-sm">
-                        <span className="font-medium text-leif-secondary">Wochentag</span>
-                        <select
-                          value={standardMonthlyWeekday}
-                          onChange={(e) => setStandardMonthlyWeekday(e.target.value)}
-                          className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
-                        >
-                          {WEEKDAY_LABELS.map((label, idx) => (
-                            <option key={label} value={String(idx)}>
-                              {label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  )}
-                </div>
-              ) : null}
-              {standardRecurrenceFrequency === "yearly" ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="font-medium text-leif-secondary">Monat</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={12}
-                      value={standardYearlyMonth}
-                      onChange={(e) => setStandardYearlyMonth(e.target.value)}
-                      className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="font-medium text-leif-secondary">Tag</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={31}
-                      value={standardYearlyDay}
-                      onChange={(e) => setStandardYearlyDay(e.target.value)}
-                      className="rounded-md border border-leif-border bg-leif-surface px-2.5 py-2 text-sm text-leif-text outline-none ring-leif-primary focus:ring-2"
-                    />
-                  </label>
-                </div>
-              ) : null}
-              <div className="rounded-md border border-leif-border bg-leif-canvas/60 px-3 py-2 text-xs text-leif-secondary">
-                {standardRulePreviewLabel}
-              </div>
-            </div>
-            <div className="mt-4 flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => setStandardDialogOpen(false)}
-                className="rounded-md border border-leif-border bg-leif-surface px-3 py-1.5 text-sm text-leif-secondary transition-colors hover:text-leif-text"
-              >
-                Schließen
-              </button>
-              <div className="flex items-center gap-2">
-                {editingStandardId ? (
-                  <button
-                    type="button"
-                    onClick={() => deleteStandardBlock()}
-                    className="inline-flex items-center gap-1 rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-sm text-red-700 transition-colors hover:bg-red-100"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Löschen
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => saveStandardBlock()}
-                  className="rounded-md border border-leif-primary bg-leif-primary-soft px-3 py-1.5 text-sm font-semibold text-leif-text transition-colors hover:bg-leif-primary-soft/80"
-                >
-                  Speichern
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       ) : null}

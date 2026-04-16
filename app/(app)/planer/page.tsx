@@ -5,7 +5,9 @@ import { fetchCalendarEventsForBerlinYmdRange } from "@/lib/calendar/fetch-range
 import type { CalendarEventRow } from "@/lib/calendar/types";
 import { PRODUCT_LABEL } from "@/lib/product-labels";
 import { createClient } from "@/lib/supabase/server";
+import { fetchPlannerStandardBlocksForUser } from "@/lib/planer/fetch-planner-standard-blocks";
 import { fetchTasksPageData } from "@/lib/tasks/fetch-tasks";
+import { taskIsBookedInCalendar } from "@/lib/tasks/types";
 import Link from "next/link";
 
 export default async function PlanerPage() {
@@ -25,7 +27,7 @@ export default async function PlanerPage() {
     );
   }
 
-  const [tasksRes, eventsRes] = await Promise.all([
+  const [tasksRes, eventsRes, standardBlocksRes] = await Promise.all([
     fetchTasksPageData(supabase),
     fetchCalendarEventsForBerlinYmdRange(
       supabase,
@@ -33,10 +35,19 @@ export default async function PlanerPage() {
       new Date().toISOString().slice(0, 10),
       new Date().toISOString().slice(0, 10),
     ),
+    fetchPlannerStandardBlocksForUser(supabase, user.id),
   ]);
 
   const plannerTasks = tasksRes.tasks
-    .filter((task) => task.status === "inbox" && !task.planned_date)
+    .filter(
+      (task) =>
+        !task.completed_at &&
+        !taskIsBookedInCalendar({
+          completed_at: task.completed_at,
+          planned_date: task.planned_date,
+          status: task.raw_status,
+        }),
+    )
     .map((task) => ({
       id: task.id,
       title: task.title,
@@ -45,14 +56,16 @@ export default async function PlanerPage() {
       relevance: task.priority === "high" ? 9 : task.priority === "normal" ? 7 : 5,
     }));
 
-  const editableTasks = tasksRes.tasks.filter((task) => task.status === "inbox" && !task.planned_date);
+  const editableTasks = tasksRes.tasks.filter((task) => !task.completed_at);
 
   return (
     <PlanerPageClient
       initialTasks={plannerTasks}
+      initialStandardBlocks={standardBlocksRes.blocks}
       initialEvents={(eventsRes.events ?? []) as CalendarEventRow[]}
       editableTasks={editableTasks}
       taskAreas={tasksRes.areas}
+      standardBlocksLoadError={standardBlocksRes.error}
     />
   );
 }

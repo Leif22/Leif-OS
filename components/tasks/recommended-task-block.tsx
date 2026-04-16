@@ -1,17 +1,21 @@
 "use client";
 
-import { updateTaskStatus, type RecommendationFeedbackInput } from "@/app/(app)/tasks/actions";
+import {
+  logRecommendationFeedback,
+  type RecommendationFeedbackInput,
+} from "@/app/(app)/tasks/actions";
 import { AlertBanner } from "@/components/ui/alert-banner";
-import { Card } from "@/components/ui/card";
 import type { TaskTypeRow } from "@/lib/task-types/defaults";
-import type { RecommendationBreakdown } from "@/lib/tasks/recommended";
+import {
+  breakdownForRecommendationLog,
+  type RecommendationBreakdown,
+} from "@/lib/tasks/recommended";
 import { todayYmdInRecommendationTz } from "@/lib/tasks/recommended";
-import { formatTaskMetaLine } from "@/lib/tasks/task-meta-line";
+import { formatRecommendedTaskTriple } from "@/lib/tasks/task-meta-line";
 import type { AreaRow, TaskWithRelations } from "@/lib/tasks/types";
 import { ListTodo } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { TaskCompleteToggle } from "./task-complete-toggle";
+import { useMemo, useState } from "react";
 import { TaskFormDialog } from "./task-form-dialog";
 import { cn } from "@/lib/cn";
 
@@ -21,12 +25,16 @@ function acceptedFeedback(
 ): RecommendationFeedbackInput {
   return {
     recommended_task_id: taskId,
-    score: b.score,
-    score_priority: b.score_priority,
-    score_due: b.score_due,
-    score_today: b.score_today,
-    score_age: b.score_age,
+    ...breakdownForRecommendationLog(b),
     action: "accepted",
+  };
+}
+
+function skippedFeedback(taskId: string, b: RecommendationBreakdown): RecommendationFeedbackInput {
+  return {
+    recommended_task_id: taskId,
+    ...breakdownForRecommendationLog(b),
+    action: "skipped",
   };
 }
 
@@ -57,21 +65,13 @@ export function RecommendedTaskBlock({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [optimisticDone, setOptimisticDone] = useState<boolean | null>(null);
 
   const feedbackAccepted = task && breakdown ? acceptedFeedback(task.id, breakdown) : null;
 
-  useEffect(() => {
-    setOptimisticDone(null);
-  }, [task?.id, task?.completed_at]);
-
-  const displayDone =
-    optimisticDone !== null ? optimisticDone : Boolean(task?.completed_at);
-
-  const recommendedMeta = useMemo(() => {
+  const recommendedTriple = useMemo(() => {
     if (!task) return null;
-    const tl = taskTypes?.find((x) => x.key === task.task_type)?.label ?? "—";
-    return formatTaskMetaLine(task, tl, todayYmd);
+    const tl = taskTypes?.find((x) => x.key === task.task_type)?.label;
+    return formatRecommendedTaskTriple(task, tl, todayYmd);
   }, [task, taskTypes, todayYmd]);
 
   function openTask() {
@@ -80,35 +80,30 @@ export function RecommendedTaskBlock({
     else setDialogOpen(true);
   }
 
-  async function handleCompleteToggle(e: React.MouseEvent) {
+  const hasRecommendationReasons = Boolean(breakdown?.reasons.length);
+
+  async function handleSkip(e: React.MouseEvent) {
     e.stopPropagation();
-    if (!task || !feedbackAccepted || pending) return;
-    const next = !displayDone;
-    setOptimisticDone(next);
-    setActionError(null);
+    if (!task || !breakdown || pending) return;
     setPending(true);
+    setActionError(null);
     try {
-      const res = await updateTaskStatus(
-        task.id,
-        next ? "done" : "open",
-        next ? feedbackAccepted : undefined,
-      );
-      if (!res.ok) {
-        setActionError(res.error);
-        setOptimisticDone(null);
-      } else {
-        void Promise.resolve(router.refresh()).catch(() => {});
-      }
+      const res = await logRecommendationFeedback(skippedFeedback(task.id, breakdown));
+      if (!res.ok) setActionError(res.error ?? "Konnte Vorschlag nicht überspringen.");
+      else void Promise.resolve(router.refresh()).catch(() => {});
     } finally {
       setPending(false);
     }
   }
 
   return (
-    <section className="space-y-2.5" aria-labelledby="recommended-task-heading">
+    <section
+      className="mb-8 space-y-2.5 lg:mb-10"
+      aria-labelledby="recommended-task-heading"
+    >
       <h2
         id="recommended-task-heading"
-        className="text-xs font-semibold uppercase tracking-wide text-leif-muted"
+        className="text-[13px] font-bold uppercase tracking-wide text-leif-text"
       >
         {heading}
       </h2>
@@ -128,47 +123,58 @@ export function RecommendedTaskBlock({
         </div>
       ) : null}
 
-      {task && breakdown ? (
-        <div className="group -mx-2 rounded-xl px-2 py-0.5 transition-[background-color] duration-200 hover:bg-leif-primary-soft/50 lg:-mx-4 lg:px-4">
-          <Card
-            className={cn(
-              "rounded-xl border border-leif-primary/20 bg-leif-primary/[0.04] px-3.5 py-3.5 shadow-sm transition-[border-color,box-shadow] duration-200",
-              "group-hover:border-leif-primary/30 group-hover:shadow-md",
-              displayDone && "opacity-[0.78]",
-            )}
-          >
-          <div className="flex gap-3">
-            <TaskCompleteToggle
-              done={displayDone}
-              disabled={pending}
-              onClick={handleCompleteToggle}
-              size="md"
-            />
-            <button
-              type="button"
-              disabled={pending}
-              onClick={openTask}
-              aria-label={`${task.title} öffnen`}
-              className={cn(
-                "min-w-0 flex-1 rounded-lg px-1 py-0.5 text-left transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-leif-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                pending && "pointer-events-none opacity-60",
-              )}
+      {task && breakdown && recommendedTriple ? (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={openTask}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              openTask();
+            }
+          }}
+          aria-label={`${task.title} öffnen`}
+          className={cn(
+            "rounded-2xl border border-[#F2C94C] bg-[#FFF9E6] px-4 py-4",
+            "shadow-[0_4px_14px_rgba(15,23,42,0.08)] transition-[background-color,box-shadow,transform,opacity] duration-200",
+            "hover:bg-[#FFF3D6] hover:shadow-[0_8px_22px_rgba(15,23,42,0.12)]",
+            "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F2C94C]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#FFF9E6]",
+            pending && "opacity-70",
+          )}
+        >
+          <div className="flex min-w-0 flex-col gap-2.5">
+            <div className="flex min-w-0 items-center gap-1.5 rounded-lg py-0.5 text-left">
+              <span className="shrink-0 text-[16px] leading-none text-amber-600/90" aria-hidden>
+                ⭐
+              </span>
+              <h3 className="min-w-0 text-[17px] font-semibold leading-snug text-leif-text">{task.title}</h3>
+            </div>
+
+            <p className="text-[13px] font-medium leading-snug text-leif-secondary">{recommendedTriple}</p>
+
+            {hasRecommendationReasons ? (
+              <p className="rounded-lg bg-amber-100/55 px-2.5 py-1.5 text-[12px] leading-snug text-leif-text">
+                <span className="font-semibold text-leif-secondary">Warum jetzt:</span>{" "}
+                {breakdown.reasons.join(" · ")}
+              </p>
+            ) : null}
+
+            <div
+              className="flex items-center justify-end gap-2 pt-0.5"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
             >
-              <h3
-                className={cn(
-                  "line-clamp-3 text-[15px] font-semibold leading-snug text-leif-text",
-                  displayDone && "text-leif-muted line-through decoration-leif-muted/80",
-                )}
+              <button
+                type="button"
+                disabled={pending}
+                onClick={handleSkip}
+                className="shrink-0 text-right text-[11px] font-medium text-leif-muted underline decoration-leif-border/80 underline-offset-2 transition-colors hover:text-leif-secondary hover:decoration-leif-secondary/60"
               >
-                {task.title}
-              </h3>
-              {recommendedMeta ? (
-                <p className="mt-1.5 text-[13px] leading-snug text-leif-muted">{recommendedMeta}</p>
-              ) : null}
-            </button>
+                Nicht dieser Task
+              </button>
+            </div>
           </div>
-          </Card>
         </div>
       ) : null}
 

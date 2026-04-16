@@ -10,6 +10,7 @@ type MenuItem = { readonly action: MenuAction; readonly label: string };
 
 type MenuBlock = { readonly id: string; readonly items: readonly MenuItem[] };
 
+/** Ergänzt die zentrale Header-Erfassung (Modus-Dropdown); z. B. Dokument-Upload bleibt hier. */
 const MENU_BLOCKS: readonly MenuBlock[] = [
   {
     id: "create",

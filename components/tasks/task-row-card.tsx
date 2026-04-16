@@ -93,11 +93,16 @@ export function TaskRowCard({
               >
                 <span
                   className={cn(
-                    "block text-[14px] font-medium leading-snug text-leif-text",
+                    "flex min-w-0 items-center gap-1 truncate whitespace-nowrap text-[14px] font-medium leading-snug text-leif-text",
                     isDone && "text-leif-muted line-through decoration-leif-muted/75",
                   )}
                 >
-                  {task.title}
+                  <span className="truncate">{task.title}</span>
+                  {task.priority === "high" ? (
+                    <span className="shrink-0 text-[12px] leading-none text-amber-600/90" aria-label="Favorit">
+                      ★
+                    </span>
+                  ) : null}
                 </span>
                 <span
                   className={cn(

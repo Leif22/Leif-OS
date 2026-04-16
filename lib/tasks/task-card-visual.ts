@@ -1,4 +1,4 @@
-import type { TaskWithRelations } from "./types";
+import { taskIsBookedInCalendar, type TaskWithRelations } from "./types";
 
 export type TaskCardVisualState = "erledigt" | "ueberfaellig" | "heute" | "ungeplant" | "geplant";
 
@@ -14,14 +14,19 @@ export function getTaskCardVisualState(
   const done = treatAsDone !== undefined ? treatAsDone : task.completed_at != null;
   if (done) return "erledigt";
 
-  const planned = task.planned_date;
+  const booked = taskIsBookedInCalendar({
+    completed_at: task.completed_at,
+    planned_date: task.planned_date,
+    status: task.raw_status,
+  });
+  const planDay = booked ? task.planned_date : null;
   const due = task.due_date;
-  const overduePlan = planned != null && planned < todayYmd;
+  const overduePlan = planDay != null && planDay < todayYmd;
   const overdueDue = due != null && due < todayYmd;
 
   if (overduePlan || overdueDue) return "ueberfaellig";
-  if (planned === todayYmd) return "heute";
-  if (!planned) return "ungeplant";
+  if (planDay === todayYmd) return "heute";
+  if (!planDay) return "ungeplant";
   return "geplant";
 }
 

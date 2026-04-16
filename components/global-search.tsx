@@ -68,6 +68,7 @@ export function GlobalSearch() {
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [resultsDialogOpen, setResultsDialogOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [hits, setHits] = useState<GlobalSearchHit[]>([]);
@@ -112,11 +113,14 @@ export function GlobalSearch() {
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+      if (!wrapRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+        if (!q.trim()) setExpanded(false);
+      }
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
+  }, [q]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -125,6 +129,7 @@ export function GlobalSearch() {
       e.preventDefault();
       const el = inputRef.current;
       if (!el) return;
+      setExpanded(true);
       el.focus();
       setOpen(true);
     }
@@ -143,22 +148,35 @@ export function GlobalSearch() {
   }, [resultsDialogOpen]);
 
   const showPanel = open && (q.trim().length >= 2 || pending || error || hits.length > 0);
+  const showInput = expanded || q.trim().length > 0;
 
   return (
-    <div ref={wrapRef} className="relative flex w-full min-w-0 items-center">
+    <div ref={wrapRef} className="relative flex items-center">
       <label htmlFor={inputId} className="sr-only">
         Globale Suche
       </label>
       <div
         className={cn(
-          "flex h-10 w-full items-center gap-2.5 rounded-[10px] border border-leif-border/55 bg-leif-surface-soft px-4",
+          "flex h-9 items-center gap-2.5 overflow-hidden rounded-lg border border-leif-border/55 bg-leif-surface-soft",
           "shadow-[0_1px_2px_rgba(15,23,42,0.045),0_2px_6px_-1px_rgba(15,23,42,0.05)]",
-          "transition-[border-color,box-shadow,background-color] duration-200 ease-out",
+          "transition-[width,border-color,box-shadow,background-color] duration-200 ease-out",
           "hover:border-leif-border/65 hover:bg-leif-surface-soft hover:shadow-[0_1px_3px_rgba(15,23,42,0.055),0_3px_10px_-2px_rgba(15,23,42,0.06)]",
           "focus-within:border-leif-border/60 focus-within:bg-leif-surface focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--leif-primary)_14%,transparent),0_2px_10px_-2px_rgba(15,23,42,0.08)]",
+          showInput ? "w-[min(24rem,calc(100vw-22rem))] px-3" : "w-9 px-0",
         )}
       >
-        <Search className="pointer-events-none size-4 shrink-0 text-leif-muted" strokeWidth={1.85} aria-hidden />
+        <button
+          type="button"
+          onClick={() => {
+            setExpanded(true);
+            setOpen(true);
+            inputRef.current?.focus();
+          }}
+          aria-label="Suche öffnen"
+          className="flex size-9 shrink-0 items-center justify-center text-leif-muted transition-colors hover:text-leif-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-leif-primary/20"
+        >
+          <Search className="size-4" strokeWidth={1.85} aria-hidden />
+        </button>
         <input
           ref={inputRef}
           id={inputId}
@@ -166,9 +184,13 @@ export function GlobalSearch() {
           value={q}
           onChange={(e) => {
             setQ(e.target.value);
+            if (!expanded) setExpanded(true);
             setOpen(true);
           }}
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            setExpanded(true);
+            setOpen(true);
+          }}
           onKeyDown={(e) => {
             if (e.key !== "Enter") return;
             if (hits.length === 0) return;
@@ -179,15 +201,16 @@ export function GlobalSearch() {
           placeholder={placeholder}
           autoComplete="off"
           className={cn(
-            "h-full min-w-0 flex-1 border-0 bg-transparent py-0 text-[13px] text-leif-text",
+            "h-full min-w-0 flex-1 border-0 bg-transparent py-0 pr-1 text-[13px] text-leif-text",
             "placeholder:text-leif-muted",
-            "focus:outline-none focus:ring-0",
+            "transition-opacity duration-150 focus:outline-none focus:ring-0",
+            showInput ? "opacity-100" : "pointer-events-none w-0 opacity-0",
           )}
         />
       </div>
       {showPanel ? (
         <div
-          className="absolute left-0 right-0 top-full z-50 mt-2 w-full min-w-[min(100%,18rem)] overflow-hidden rounded-[12px] border border-leif-border bg-leif-surface shadow-leif"
+          className="absolute right-0 top-full z-50 mt-2 w-[min(28rem,calc(100vw-3rem))] min-w-[18rem] overflow-hidden rounded-[12px] border border-leif-border bg-leif-surface shadow-leif"
           role="listbox"
           aria-label="Suchergebnisse"
         >

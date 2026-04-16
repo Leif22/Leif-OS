@@ -192,3 +192,30 @@ export async function syncOutlookCalendarMonth(
   revalidate();
   return res;
 }
+
+export async function updatePlannedTaskFromCalendar(
+  taskId: string,
+  plannedDate: string,
+  estimatedMinutes: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const day = String(plannedDate ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return { ok: false, error: "Ungültiges Datum." };
+  const duration = Math.max(15, Math.round(Number(estimatedMinutes) || 0));
+  const supabase = await createClient();
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userData.user) return { ok: false, error: "Nicht angemeldet." };
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      planned_date: day,
+      estimated_minutes: duration,
+      status: "planned",
+      completed_at: null,
+    })
+    .eq("id", taskId)
+    .eq("user_id", userData.user.id);
+  if (error) return { ok: false, error: error.message };
+  revalidate();
+  return { ok: true };
+}

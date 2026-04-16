@@ -53,3 +53,29 @@ export function formatTaskMetaLine(
   if (!hasDate) return "Termin fehlt";
   return "Art fehlt";
 }
+
+/**
+ * Empfehlungskarte: immer drei Segmente `Art · Dauer · Fälligkeit`,
+ * fehlende Werte klar als „… fehlt“.
+ */
+export function formatRecommendedTaskTriple(
+  task: TaskWithRelations,
+  typeLabelFromConfig: string | undefined,
+  todayYmd: string,
+): string {
+  const raw = task.task_type?.trim() ?? "";
+  const art =
+    raw === ""
+      ? "Art fehlt"
+      : typeLabelFromConfig && typeLabelFromConfig !== "—"
+        ? typeLabelFromConfig
+        : raw;
+
+  const hasMin = task.estimated_minutes != null && task.estimated_minutes > 0;
+  const dauer = hasMin ? `${task.estimated_minutes} min` : "Dauer fehlt";
+
+  const dateIso = task.planned_date ?? task.due_date ?? null;
+  const fälligkeit = dateIso ? relativeDueLabel(dateIso, todayYmd) : "Fälligkeit fehlt";
+
+  return `${art} · ${dauer} · ${fälligkeit}`;
+}

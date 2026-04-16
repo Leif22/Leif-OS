@@ -1,4 +1,4 @@
-export type KalenderView = "month" | "week" | "day";
+export type KalenderView = "month" | "week" | "day" | "agenda";
 
 export type CalendarEventRow = {
   id: string;

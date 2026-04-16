@@ -43,6 +43,22 @@ export const PRODUCT_COPY = {
   plusMenuDropdownGedaechtnisEintrag: "Neuer Gedächtnis-Eintrag",
   schnellanlageTitle: "Schnellanlage",
 
+  /** Zentrale Header-Erfassung: Modus-Dropdown */
+  headerCaptureModeInbox: "Inbox",
+  headerCaptureModeTask: "Task",
+  headerCaptureModeTermin: "Termin",
+  headerCaptureModeNotiz: "Notiz",
+  headerCaptureAriaMode: "Erfassungsmodus",
+  headerCapturePlaceholderInbox: "Titel eingeben, Enter zum Anlegen in der Inbox",
+  headerCapturePlaceholderTask: "Task-Titel",
+  headerCapturePlaceholderTermin: "Termin-Titel",
+  headerCapturePlaceholderNotiz: "Notiz-Titel",
+  headerCaptureDurationHint: "Min.",
+  headerCaptureDueHint: "Fällig",
+  headerCaptureStartHint: "Beginn",
+  headerCaptureNoteProjectHint: "Projekt",
+  headerCaptureNoteNoProject: "Kein Projekt",
+
   lebensbereichePageDescription:
     "Bereiche strukturieren deine Tasks. Namen und Reihenfolge kannst du anpassen; Löschen ist nur möglich, wenn kein Task mehr diesem Bereich zugeordnet ist.",
   bereicheSettingsDescription:

@@ -1,8 +1,15 @@
-import type { TaskPriority, TaskWithRelations } from "./types";
-import { PRIORITY_ORDER } from "./types";
+import type { TaskWithRelations } from "./types";
 
 /** Kalendertag für „heute“ (z. B. Fälligkeit / geplanter Tag), konsistent mit Nutzerzeitzone. */
 export const RECOMMENDATION_TIMEZONE = "Europe/Berlin";
+
+/** Task-Schlüssel, die als Fokusarbeit gelten (optionaler Morgen-Boost). */
+const FOCUS_TASK_TYPE_KEYS = new Set(["deep"]);
+
+const MORNING_FOCUS_BOOST = 15;
+/** Inkl. 5, exkl. 12 → Stunden 5–11. */
+const MORNING_FOCUS_START_HOUR = 5;
+const MORNING_FOCUS_END_HOUR = 12;
 
 export function todayYmdInRecommendationTz(date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -21,114 +28,178 @@ export function calendarDaysBetweenDueAndToday(dueYmd: string, todayYmd: string)
   return Math.round((due - today) / 86_400_000);
 }
 
-/**
- * Fälligkeitsdruck 0…1 (V1): Überfällig = 1; heute 0,9; morgen 0,7; …; >14 Tage oder kein Datum = 0.
- * Zwischen den Stützpunkten linear.
- */
-export function duePressureNormalized(diffDays: number): number {
-  if (diffDays < 0) return 1;
-  if (diffDays <= 1) return 0.9 - 0.2 * diffDays;
-  if (diffDays <= 3) return 0.7 + (0.5 - 0.7) * ((diffDays - 1) / 2);
-  if (diffDays <= 7) return 0.5 + (0.2 - 0.5) * ((diffDays - 3) / 4);
-  if (diffDays <= 14) return 0.2 + (0 - 0.2) * ((diffDays - 7) / 7);
-  return 0;
+export function berlinHourLocal(date: Date = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: RECOMMENDATION_TIMEZONE,
+    hour: "numeric",
+    hour12: false,
+  }).formatToParts(date);
+  const h = parts.find((p) => p.type === "hour")?.value;
+  return h ? parseInt(h, 10) : 12;
 }
 
-export function priorityNormalized(p: TaskPriority): number {
-  if (p === "high") return 1;
-  if (p === "normal") return 0.5;
-  return 0.1;
+function effectiveDueYmd(task: TaskWithRelations): string | null {
+  const p = task.planned_date?.trim();
+  const d = task.due_date?.trim();
+  return (p || d || null) as string | null;
 }
 
-export function ageDaysSince(createdAtIso: string): number {
-  const created = new Date(createdAtIso).getTime();
-  return Math.max(0, Math.floor((Date.now() - created) / 86_400_000));
+function duePointsAndHints(
+  task: TaskWithRelations,
+  todayYmd: string,
+): { points: number; hints: string[] } {
+  const ymd = effectiveDueYmd(task);
+  if (!ymd) {
+    return { points: 5, hints: [] };
+  }
+  const diff = calendarDaysBetweenDueAndToday(ymd, todayYmd);
+  if (diff < 0) return { points: 100, hints: ["überfällig"] };
+  if (diff === 0) return { points: 80, hints: ["heute fällig"] };
+  if (diff === 1) return { points: 50, hints: ["morgen fällig"] };
+  return { points: 20, hints: ["Termin liegt in der Zukunft"] };
 }
 
-export function ageNormalized(createdAtIso: string): number {
-  return Math.min(ageDaysSince(createdAtIso) / 30, 1);
+function durationPointsAndHints(minutes: number | null | undefined): { points: number; hints: string[] } {
+  if (minutes == null || minutes <= 0) {
+    return { points: 0, hints: [] };
+  }
+  if (minutes < 15) return { points: 30, hints: ["kurze Dauer"] };
+  if (minutes <= 60) return { points: 20, hints: ["überschaubare Dauer"] };
+  return { points: 5, hints: [] };
+}
+
+function dataQualityPoints(task: TaskWithRelations): { points: number } {
+  let p = 0;
+  const min = task.estimated_minutes;
+  if (min == null || min <= 0) p -= 20;
+  if (!task.task_type?.trim()) p -= 10;
+  return { points: p };
+}
+
+function contextPoints(task: TaskWithRelations, now: Date): { points: number; hints: string[] } {
+  const raw = task.task_type?.trim() ?? "";
+  if (!raw || !FOCUS_TASK_TYPE_KEYS.has(raw)) return { points: 0, hints: [] };
+  const h = berlinHourLocal(now);
+  if (h < MORNING_FOCUS_START_HOUR || h >= MORNING_FOCUS_END_HOUR) return { points: 0, hints: [] };
+  return { points: MORNING_FOCUS_BOOST, hints: ["Fokus passt zum Vormittag"] };
+}
+
+function buildReasons(
+  dueHints: string[],
+  durHints: string[],
+  dq: number,
+  ctxHints: string[],
+  hasArt: boolean,
+  hasDuration: boolean,
+): string[] {
+  const out: string[] = [...dueHints, ...durHints, ...ctxHints];
+  if (dq === 0 && hasArt && hasDuration) {
+    out.push("klare Einordnung");
+  }
+  return [...new Set(out.filter(Boolean))];
 }
 
 export type RecommendationBreakdown = {
-  /** Gesamtscore (Summe der gewichteten Teilscores) */
+  /** Gesamtscore (regelbasiert) */
+  score: number;
+  score_due: number;
+  score_duration: number;
+  score_data_quality: number;
+  score_context: number;
+  /** Kurze Texte für „Empfohlen, weil …“ */
+  reasons: string[];
+};
+
+/** Mappt die neue Aufschlüsselung auf die Legacy-Spalten in `recommendation_log`. */
+export function breakdownForRecommendationLog(b: RecommendationBreakdown): {
   score: number;
   score_priority: number;
   score_due: number;
   score_today: number;
   score_age: number;
-};
-
-const W_P = 0.4;
-const W_D = 0.3;
-const W_T = 0.2;
-const W_A = 0.1;
+} {
+  return {
+    score: b.score,
+    score_priority: b.score_context,
+    score_due: b.score_due,
+    score_today: b.score_duration,
+    score_age: b.score_data_quality,
+  };
+}
 
 export function computeRecommendationBreakdown(
   task: TaskWithRelations,
   todayYmd: string,
+  now: Date = new Date(),
 ): RecommendationBreakdown {
-  const pNorm = priorityNormalized(task.priority);
-  const diff = task.due_date
-    ? calendarDaysBetweenDueAndToday(task.due_date, todayYmd)
-    : 9999;
-  const dNorm = task.due_date ? duePressureNormalized(diff) : 0;
-  const tNorm = task.planned_date === todayYmd ? 1 : 0;
-  const aNorm = ageNormalized(task.created_at);
+  const { points: duePts, hints: dueHints } = duePointsAndHints(task, todayYmd);
+  const { points: durPts, hints: durHints } = durationPointsAndHints(task.estimated_minutes);
+  const { points: dq } = dataQualityPoints(task);
+  const { points: ctxPts, hints: ctxHints } = contextPoints(task, now);
 
-  const score_priority = W_P * pNorm;
-  const score_due = W_D * dNorm;
-  const score_today = W_T * tNorm;
-  const score_age = W_A * aNorm;
+  const hasArt = Boolean(task.task_type?.trim());
+  const hasDuration = task.estimated_minutes != null && task.estimated_minutes > 0;
+  const reasons = buildReasons(dueHints, durHints, dq, ctxHints, hasArt, hasDuration);
+
+  const score = duePts + durPts + dq + ctxPts;
 
   return {
-    score: score_priority + score_due + score_today + score_age,
-    score_priority,
-    score_due,
-    score_today,
-    score_age,
+    score,
+    score_due: duePts,
+    score_duration: durPts,
+    score_data_quality: dq,
+    score_context: ctxPts,
+    reasons,
   };
 }
 
-const SCORE_EPS = 1e-9;
+/** Frühere Fälligkeit = kleineres YYYY-MM-DD; ohne Datum sortiert nach hinten. */
+function dueSortKey(task: TaskWithRelations): string {
+  return effectiveDueYmd(task) ?? "9999-12-31";
+}
 
-function tieBreak(a: TaskWithRelations, b: TaskWithRelations, todayYmd: string): number {
-  const pa = PRIORITY_ORDER[a.priority];
-  const pb = PRIORITY_ORDER[b.priority];
-  if (pa !== pb) return pa - pb;
+/** Kürzere Dauer gewinnt; fehlende Dauer nach hinten. */
+function durationSortKey(task: TaskWithRelations): number {
+  const m = task.estimated_minutes;
+  if (m == null || m <= 0) return 999_999;
+  return m;
+}
 
-  const da = a.due_date ? calendarDaysBetweenDueAndToday(a.due_date, todayYmd) : 10_000;
-  const db = b.due_date ? calendarDaysBetweenDueAndToday(b.due_date, todayYmd) : 10_000;
-  if (da !== db) return da - db;
+function compareRanked(
+  a: { task: TaskWithRelations; breakdown: RecommendationBreakdown },
+  b: { task: TaskWithRelations; breakdown: RecommendationBreakdown },
+): number {
+  const ds = b.breakdown.score - a.breakdown.score;
+  if (ds !== 0) return ds;
 
-  return ageDaysSince(b.created_at) - ageDaysSince(a.created_at);
+  const dueA = dueSortKey(a.task);
+  const dueB = dueSortKey(b.task);
+  if (dueA !== dueB) return dueA < dueB ? -1 : 1;
+
+  const durA = durationSortKey(a.task);
+  const durB = durationSortKey(b.task);
+  if (durA !== durB) return durA - durB;
+
+  return a.task.id.localeCompare(b.task.id);
 }
 
 export function pickRecommendedTask(
   tasks: TaskWithRelations[],
   todayYmd: string,
+  excludeTaskIds?: ReadonlySet<string>,
+  now: Date = new Date(),
 ): { task: TaskWithRelations; breakdown: RecommendationBreakdown } | null {
-  const candidates = tasks.filter((t) => t.status !== "erledigt");
+  const candidates = tasks.filter(
+    (t) => t.status !== "erledigt" && !(excludeTaskIds?.has(t.id)),
+  );
   if (candidates.length === 0) return null;
 
-  let best = candidates[0];
-  let bestBreakdown = computeRecommendationBreakdown(best, todayYmd);
-  let bestScore = bestBreakdown.score;
+  const scored = candidates.map((task) => ({
+    task,
+    breakdown: computeRecommendationBreakdown(task, todayYmd, now),
+  }));
 
-  for (let i = 1; i < candidates.length; i++) {
-    const t = candidates[i];
-    const br = computeRecommendationBreakdown(t, todayYmd);
-    if (br.score > bestScore + SCORE_EPS) {
-      best = t;
-      bestBreakdown = br;
-      bestScore = br.score;
-    } else if (Math.abs(br.score - bestScore) <= SCORE_EPS) {
-      if (tieBreak(t, best, todayYmd) < 0) {
-        best = t;
-        bestBreakdown = br;
-        bestScore = br.score;
-      }
-    }
-  }
+  scored.sort(compareRanked);
 
-  return { task: best, breakdown: bestBreakdown };
+  return { task: scored[0].task, breakdown: scored[0].breakdown };
 }

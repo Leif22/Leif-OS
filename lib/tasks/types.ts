@@ -62,17 +62,26 @@ export const PRIORITY_ORDER: Record<TaskPriority, number> = {
   low: 2,
 };
 
+/** Kalender-gebucht: DB-Status `planned` und Kalendertag gesetzt (nicht nur Formular-Absicht). */
+export function taskIsBookedInCalendar(
+  task: Pick<TaskRow, "completed_at" | "planned_date" | "status">,
+): boolean {
+  if (task.completed_at) return false;
+  const day = task.planned_date?.trim();
+  if (!day) return false;
+  return String(task.status).trim() === "planned";
+}
+
 export function taskPlanningStatusFromTask(
-  task: Pick<TaskRow, "planned_date">,
+  task: Pick<TaskRow, "completed_at" | "planned_date" | "status">,
 ): TaskPlanningStatus {
-  if (task.planned_date) return "geplant";
-  return "ungeplant";
+  return taskIsBookedInCalendar(task) ? "geplant" : "ungeplant";
 }
 
 export function deriveTaskStatus(
-  task: Pick<TaskRow, "completed_at" | "planned_date">,
+  task: Pick<TaskRow, "completed_at" | "planned_date" | "status">,
 ): TaskDerivedStatus {
   if (task.completed_at) return "erledigt";
-  if (task.planned_date) return "geplant";
+  if (taskIsBookedInCalendar(task)) return "geplant";
   return "inbox";
 }

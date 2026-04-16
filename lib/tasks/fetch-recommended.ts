@@ -1,7 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AreaRow, TaskRow } from "./types";
 import { mergeTasksWithAreasAndTags } from "./fetch-tasks";
-import { pickRecommendedTask, todayYmdInRecommendationTz, type RecommendationBreakdown } from "./recommended";
+import {
+  pickRecommendedTask,
+  RECOMMENDATION_TIMEZONE,
+  todayYmdInRecommendationTz,
+  type RecommendationBreakdown,
+} from "./recommended";
 import type { TaskWithRelations } from "./types";
 
 export type RecommendedTaskResult = {
@@ -46,7 +51,29 @@ export async function fetchRecommendedTask(
 
   const merged = mergeTasksWithAreasAndTags(tasks, areas ?? [], {});
   const todayYmd = todayYmdInRecommendationTz();
-  const picked = pickRecommendedTask(merged, todayYmd);
+
+  const sinceIso = new Date(Date.now() - 40 * 3600 * 1000).toISOString();
+  const { data: skipLogs } = await supabase
+    .from("recommendation_log")
+    .select("recommended_task_id, created_at")
+    .eq("user_id", userId)
+    .eq("action", "skipped")
+    .gte("created_at", sinceIso);
+
+  const skippedTodayBerlin = new Set<string>();
+  for (const row of skipLogs ?? []) {
+    const tid = row.recommended_task_id as string | null;
+    if (!tid) continue;
+    const logYmd = new Intl.DateTimeFormat("en-CA", {
+      timeZone: RECOMMENDATION_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(String(row.created_at)));
+    if (logYmd === todayYmd) skippedTodayBerlin.add(tid);
+  }
+
+  const picked = pickRecommendedTask(merged, todayYmd, skippedTodayBerlin);
 
   if (!picked) {
     return { task: null, breakdown: null, areas: areas ?? [], error: null };

@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { controlClass, textareaClass } from "@/components/ui/control-styles";
+import { controlClass, controlClassCompact, textareaClass } from "@/components/ui/control-styles";
 import { cn } from "@/lib/cn";
 import type { TaskTypeRow } from "@/lib/task-types/defaults";
 import { addBerlinCalendarDays } from "@/lib/calendar/berlin-ymd";
@@ -13,7 +13,7 @@ import {
   type TaskType,
   type TaskWithRelations,
 } from "@/lib/tasks/types";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState, type KeyboardEvent } from "react";
 
 export type TaskEditorPlanChoice = "inbox" | "today" | "tomorrow" | "date";
@@ -36,6 +36,8 @@ type Props = {
   variant?: "default" | "panel";
   /** Panel: Speichern außerhalb (z. B. sticky Leiste im Detail-Panel). */
   hidePanelSaveButton?: boolean;
+  /** Panel: Titel wird im äußeren Header gerendert. */
+  omitTitle?: boolean;
   value: TaskEditorValue;
   taskTypes: TaskTypeRow[];
   documents: { id: string; title: string }[];
@@ -124,9 +126,14 @@ export function applyTaskEditorValueToTask(
   value: TaskEditorValue,
 ): TaskWithRelations {
   const p = taskEditorToPayload(value);
+  const prevPlan = base.planned_date?.trim() || null;
+  const nextPlan = p.planned_date?.trim() || null;
+  const planChanged = prevPlan !== nextPlan;
+  const effectiveDbStatus = planChanged ? "open" : base.raw_status;
   const status = deriveTaskStatus({
     completed_at: base.completed_at,
     planned_date: p.planned_date,
+    status: effectiveDbStatus,
   });
   return {
     ...base,
@@ -162,6 +169,7 @@ export function TaskEditor({
   mode,
   variant = "default",
   hidePanelSaveButton = false,
+  omitTitle = false,
   value,
   taskTypes,
   documents,
@@ -209,7 +217,7 @@ export function TaskEditor({
       <label className="flex flex-col gap-2 text-sm">
         <span className="font-medium text-leif-secondary">Beschreibung</span>
         <textarea
-          rows={isPanel ? 4 : 3}
+          rows={3}
           value={value.description}
           onChange={(e) => onChange(setField(value, "description", e.target.value))}
           className={textareaClass}
@@ -336,6 +344,80 @@ export function TaskEditor({
   const artTypeButtonClass =
     "min-h-9 w-full justify-center px-2 py-2 text-center text-xs font-medium leading-tight";
 
+  const chipCls =
+    "inline-flex min-h-7 max-w-full items-center justify-center rounded-full border px-2 py-1 text-[11px] font-medium leading-tight transition-colors";
+  const chipOn = "border-leif-primary bg-leif-primary text-white";
+  const chipOff = "border-leif-border/80 bg-white text-leif-secondary hover:bg-leif-canvas/60";
+
+  const planungRowPanel = (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-2 sm:gap-x-3">
+      <label className="flex items-center gap-1.5 text-[12px]">
+        <span className="shrink-0 font-medium text-leif-muted">Dauer</span>
+        <select
+          value={value.estimated_minutes}
+          onChange={(e) => onChange(setField(value, "estimated_minutes", e.target.value))}
+          className={cn(controlClassCompact, "h-8 min-h-0 w-[5.5rem] py-0 text-[12px]")}
+        >
+          <option value="">—</option>
+          {[15, 30, 45, 60].map((minutes) => (
+            <option key={minutes} value={String(minutes)}>
+              {minutes} min
+            </option>
+          ))}
+        </select>
+      </label>
+      <span className="hidden h-5 w-px shrink-0 bg-leif-border/70 sm:block" aria-hidden />
+      <div className="flex flex-wrap items-center gap-1">
+        <Button
+          type="button"
+          size="sm"
+          className="h-8 px-2.5 text-[12px]"
+          variant={value.plan_choice === "today" ? "primary" : "secondary"}
+          onClick={() => onChange(setField(value, "plan_choice", "today"))}
+        >
+          Heute
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          className="h-8 px-2.5 text-[12px]"
+          variant={value.plan_choice === "tomorrow" ? "primary" : "secondary"}
+          onClick={() => onChange(setField(value, "plan_choice", "tomorrow"))}
+        >
+          Morgen
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          className="h-8 px-2.5 text-[12px]"
+          variant={value.plan_choice === "date" ? "primary" : "secondary"}
+          onClick={() => onChange(setField(value, "plan_choice", "date"))}
+        >
+          Datum
+        </Button>
+        {!hideInboxChoice ? (
+          <Button
+            type="button"
+            size="sm"
+            className="h-8 px-2.5 text-[12px]"
+            variant={value.plan_choice === "inbox" ? "primary" : "secondary"}
+            onClick={() => onChange(setField(value, "plan_choice", "inbox"))}
+          >
+            Ohne Termin
+          </Button>
+        ) : null}
+        {value.plan_choice === "date" ? (
+          <input
+            type="date"
+            value={value.planned_date}
+            onChange={(e) => onChange(setField(value, "planned_date", e.target.value))}
+            className={cn(controlClassCompact, "h-8 w-auto min-w-[9.5rem] py-0 text-[12px]")}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+
   const einordnungFields = (
     <div className="space-y-4">
       <div className="space-y-2">
@@ -383,31 +465,68 @@ export function TaskEditor({
 
   if (isPanel) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         {error ? (
-          <p className="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-900">{error}</p>
+          <p className="rounded-lg bg-red-50 px-2.5 py-2 text-[12px] text-red-900">{error}</p>
         ) : null}
 
-        {titleField}
+        {!omitTitle ? titleField : null}
 
-        <section className="space-y-4 rounded-2xl bg-leif-canvas/45 px-4 py-4 sm:px-5 sm:py-5">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-leif-muted">Planung</h3>
-          {planungFields}
-        </section>
+        <div>
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-leif-muted">Planung</p>
+          {planungRowPanel}
+        </div>
 
-        <section className="space-y-4 rounded-2xl bg-leif-canvas/45 px-4 py-4 sm:px-5 sm:py-5">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-leif-muted">Einordnung</h3>
-          {einordnungFields}
-        </section>
+        <div>
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-leif-muted">Einordnung</p>
+            <label className="flex items-center gap-1.5 text-[11px]">
+              <span className="font-medium text-leif-muted">Priorität</span>
+              <select
+                value={value.priority}
+                onChange={(e) => onChange(setField(value, "priority", e.target.value as TaskPriority))}
+                className={cn(controlClassCompact, "h-8 w-[7.5rem] py-0 text-[12px]")}
+              >
+                {TASK_PRIORITIES.map((priority) => (
+                  <option key={priority.value} value={priority.value}>
+                    {priority.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex max-h-[4.5rem] flex-wrap content-start gap-1.5 overflow-y-auto pr-0.5">
+            <button
+              type="button"
+              className={cn(chipCls, value.task_type === "" ? chipOn : chipOff)}
+              onClick={() => onChange(setField(value, "task_type", ""))}
+            >
+              —
+            </button>
+            {typeOptions.map((type) => (
+              <button
+                key={type.id}
+                type="button"
+                className={cn(chipCls, value.task_type === type.key ? chipOn : chipOff)}
+                onClick={() => onChange(setField(value, "task_type", type.key))}
+              >
+                {type.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-        <section className="space-y-4 rounded-2xl bg-leif-canvas/45 px-4 py-4 sm:px-5 sm:py-5">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-leif-muted">Inhalt</h3>
-          <div className="space-y-4">{advancedBlock}</div>
-        </section>
+        <details className="group rounded-lg border border-leif-border/70 bg-leif-canvas/20">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 py-2 pl-1 text-[12px] font-medium text-leif-secondary [&::-webkit-details-marker]:hidden">
+            <ChevronRight className="size-3.5 shrink-0 text-leif-muted transition-transform group-open:rotate-90" />
+            Mehr Details
+          </summary>
+          <div className="space-y-3 border-t border-leif-border/50 px-1 pb-2 pt-2.5">{advancedBlock}</div>
+        </details>
 
         {!hidePanelSaveButton ? (
           <div className="flex justify-end pt-1">
-            <Button type="button" variant="primary" className="min-w-[8rem] px-6" onClick={onSave} disabled={pending}>
+            <Button type="button" variant="primary" className="min-w-[8rem] px-5" onClick={onSave} disabled={pending}>
               {pending ? "Speichern…" : saveLabel}
             </Button>
           </div>

@@ -42,7 +42,7 @@ export async function moveTaskReviewToTomorrow(taskId: string): Promise<ActionRe
   const tomorrow = addBerlinCalendarDays(todayYmdInRecommendationTz(), 1);
   const { error } = await ctx.supabase
     .from("tasks")
-    .update({ planned_date: tomorrow, due_date: tomorrow, status: "planned" })
+    .update({ planned_date: tomorrow, due_date: tomorrow })
     .eq("id", taskId)
     .eq("user_id", ctx.userId)
     .is("completed_at", null);
@@ -72,7 +72,6 @@ export async function replanTaskFromReview(
     .update({
       planned_date: nextPlanned,
       due_date: nextDue,
-      status: "planned",
     })
     .eq("id", taskId)
     .eq("user_id", ctx.userId)

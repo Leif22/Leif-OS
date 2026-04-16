@@ -6,6 +6,7 @@ import { LeifOsLogo } from "@/components/brand/leif-os-logo";
 import { GlobalPlusMenu } from "@/components/global-plus-menu";
 import { GlobalSearch } from "@/components/global-search";
 import { HeaderUserAvatar } from "@/components/header-user-avatar";
+import { HeaderQuickCapture } from "@/components/header/header-quick-capture";
 import { GlobalCreateHost } from "@/components/global-create-host";
 import { ContentFrame } from "@/components/ui/content-frame";
 import { SidebarNav } from "@/components/sidebar-nav";
@@ -32,11 +33,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="grid min-h-full grid-cols-[240px_1fr] grid-rows-[auto_1fr] bg-leif-canvas text-leif-text">
-      <header className="col-span-2 flex h-16 min-h-16 shrink-0 items-center justify-between gap-4 border-b border-leif-border/35 bg-leif-surface shadow-[0_1px_0_rgba(15,23,42,0.03),0_8px_24px_-12px_rgba(15,23,42,0.06)]">
+      <header className="col-span-2 flex shrink-0 items-stretch justify-between gap-4 border-b border-leif-border/35 bg-leif-surface shadow-[0_1px_0_rgba(15,23,42,0.03),0_8px_24px_-12px_rgba(15,23,42,0.06)]">
         <Link
           href="/dashboard"
           className={cn(
-            "grid min-h-16 w-[240px] shrink-0 grid-cols-[22px_minmax(0,1fr)] items-center gap-3 self-stretch px-6 outline-offset-2",
+            "grid w-[240px] shrink-0 grid-cols-[22px_minmax(0,1fr)] items-center gap-3 self-stretch px-6 outline-offset-2",
             "rounded-md outline-none transition-opacity duration-200 ease-out hover:opacity-90 active:opacity-100",
             "focus-visible:ring-2 focus-visible:ring-leif-primary/25",
           )}
@@ -49,14 +50,15 @@ export function AppShell({ children }: { children: ReactNode }) {
           </span>
         </Link>
 
-        <div className="flex min-h-16 min-w-0 flex-1 items-center justify-center self-stretch px-4">
-          <div className="flex w-full max-w-[560px] min-w-0 items-center">
-            <GlobalSearch />
+        <div className="flex min-w-0 flex-1 items-center justify-center self-stretch px-4 py-3">
+          <div className="w-full min-w-0 max-w-[560px]">
+            <HeaderQuickCapture />
           </div>
         </div>
 
-        <div className="flex min-h-16 shrink-0 items-center gap-4 self-stretch pr-6">
+        <div className="flex shrink-0 items-center gap-3 self-stretch pr-6">
           <GlobalPlusMenu />
+          <GlobalSearch />
           <Link
             href="/inbox"
             className={cn(

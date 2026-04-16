@@ -10,21 +10,21 @@ import {
 import { PRODUCT_COPY, PRODUCT_LABEL } from "@/lib/product-labels";
 import type { SparringTaskDraft } from "@/lib/sparring/task-draft";
 import type { TaskTypeRow } from "@/lib/task-types/defaults";
-import type { RecommendationBreakdown } from "@/lib/tasks/recommended";
 import {
-  buildTaskTypeGroups,
-  orderedTaskTypeGroupLabels,
-  taskTypeGroupMetaLine,
-} from "@/lib/tasks/group-tasks-by-type";
+  breakdownForRecommendationLog,
+  type RecommendationBreakdown,
+} from "@/lib/tasks/recommended";
+import { buildTaskTypeGroups, taskTypeGroupMetaLine } from "@/lib/tasks/group-tasks-by-type";
 import {
   countTasksForFilter,
   filterTasksBySmartFilter,
   type TaskSmartFilter,
+  type TaskSmartFilterContext,
   sortTasksForSmartFilter,
   TASK_SMART_FILTER_OPTIONS,
 } from "@/lib/tasks/task-filters";
 import { todayYmdInRecommendationTz } from "@/lib/tasks/recommended";
-import type { AreaRow, TaskWithRelations } from "@/lib/tasks/types";
+import { taskIsBookedInCalendar, type AreaRow, type TaskWithRelations } from "@/lib/tasks/types";
 import { cn } from "@/lib/cn";
 import {
   AlertTriangle,
@@ -33,6 +33,8 @@ import {
   CalendarDays,
   CheckCircle2,
   LayoutGrid,
+  Lock,
+  Star,
 } from "lucide-react";
 import {
   applyTaskEditorValueToTask,
@@ -46,11 +48,14 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePlanerDraftTaskIds } from "@/components/tasks/use-planer-draft-task-ids";
 
 const FILTER_ICONS: Record<TaskSmartFilter, typeof Calendar> = {
   heute: Calendar,
   morgen: CalendarClock,
   ueberfaellig: AlertTriangle,
+  favoriten: Star,
+  planer_entwurf: Lock,
   geplant: CalendarDays,
   erledigt: CheckCircle2,
   alle: LayoutGrid,
@@ -73,11 +78,7 @@ function acceptedFeedback(
 ): RecommendationFeedbackInput {
   return {
     recommended_task_id: taskId,
-    score: b.score,
-    score_priority: b.score_priority,
-    score_due: b.score_due,
-    score_today: b.score_today,
-    score_age: b.score_age,
+    ...breakdownForRecommendationLog(b),
     action: "accepted",
   };
 }
@@ -97,6 +98,11 @@ export function TasksClient({
   const searchParams = useSearchParams();
 
   const todayYmd = useMemo(() => todayYmdInRecommendationTz(), []);
+  const planerDraftTaskIds = usePlanerDraftTaskIds();
+  const filterCtx = useMemo<TaskSmartFilterContext>(
+    () => ({ planerDraftTaskIds }),
+    [planerDraftTaskIds],
+  );
 
   const [filter, setFilter] = useState<TaskSmartFilter>("heute");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -110,24 +116,6 @@ export function TasksClient({
   /** Live-Vorschau für die Liste, solange ein Task im Panel bearbeitet wird. */
   const [panelDraft, setPanelDraft] = useState<TaskEditorValue | null>(null);
   const [groupByType, setGroupByType] = useState(false);
-
-  const groupByTypeDescId = "tasks-group-by-type-desc";
-  const typeGroupQuickOrder = useMemo(() => {
-    const labels = orderedTaskTypeGroupLabels(taskTypes);
-    const tail = "Ohne Art";
-    if (labels.length === 0) {
-      return `${tail} und ggf. weitere Gruppen nach Schlüsseln aus den Tasks (Einstellungen → Task-Arten).`;
-    }
-    return [...labels, tail].join(" · ");
-  }, [taskTypes]);
-
-  const groupByTypeHintTitle = useMemo(() => {
-    const labels = orderedTaskTypeGroupLabels(taskTypes);
-    if (labels.length === 0) {
-      return "Gruppierung nach in Tasks vorkommenden Arten-Schlüsseln, zuletzt Ohne Art. Lege Arten unter Einstellungen fest.";
-    }
-    return `Aktuelle Arten aus den Einstellungen (Reihenfolge): ${labels.join(", ")}, zuletzt Ohne Art. Veraltete Task-Schlüssel erscheinen als eigene Gruppe.`;
-  }, [taskTypes]);
 
   const refreshTypesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -149,9 +137,9 @@ export function TasksClient({
   }, [router]);
 
   const filteredSorted = useMemo(() => {
-    const f = filterTasksBySmartFilter(tasks, filter, todayYmd);
+    const f = filterTasksBySmartFilter(tasks, filter, todayYmd, filterCtx);
     return sortTasksForSmartFilter(f, filter);
-  }, [tasks, filter, todayYmd]);
+  }, [tasks, filter, todayYmd, filterCtx]);
 
   const listTasks = useMemo(() => {
     if (!recommended?.task) return filteredSorted;
@@ -159,8 +147,19 @@ export function TasksClient({
   }, [filteredSorted, recommended]);
 
   const taskGroups = useMemo(() => {
-    const ohneTermin = listTasks.filter((t) => !t.completed_at && !t.planned_date);
-    const geplant = listTasks.filter((t) => !t.completed_at && t.planned_date);
+    const booked = (t: TaskWithRelations) =>
+      taskIsBookedInCalendar({
+        completed_at: t.completed_at,
+        planned_date: t.planned_date,
+        status: t.raw_status,
+      });
+    const gebunden = listTasks.filter(
+      (t) => !t.completed_at && !booked(t) && planerDraftTaskIds.has(t.id),
+    );
+    const geplant = listTasks.filter((t) => !t.completed_at && booked(t));
+    const ohneTermin = listTasks.filter(
+      (t) => !t.completed_at && !booked(t) && !planerDraftTaskIds.has(t.id),
+    );
     const erledigt = listTasks.filter((t) => t.completed_at);
     return [
       {
@@ -169,10 +168,16 @@ export function TasksClient({
         items: ohneTermin,
         gap: "space-y-2" as const,
       },
+      {
+        key: "gebunden" as const,
+        label: "Gebunden",
+        items: gebunden,
+        gap: "space-y-1.5" as const,
+      },
       { key: "geplant" as const, label: "Geplant", items: geplant, gap: "space-y-1.5" as const },
       { key: "erledigt" as const, label: "Erledigt", items: erledigt, gap: "space-y-1.5" as const },
     ].filter((g) => g.items.length > 0);
-  }, [listTasks]);
+  }, [listTasks, planerDraftTaskIds]);
 
   const handlePanelDraftChange = useCallback((d: TaskEditorValue) => {
     setPanelDraft(d);
@@ -344,13 +349,18 @@ export function TasksClient({
           aria-label="Task-Filter"
         >
           {TASK_SMART_FILTER_OPTIONS.map((opt) => {
-            const count = countTasksForFilter(tasks, opt.id, todayYmd);
+            const count = countTasksForFilter(tasks, opt.id, todayYmd, filterCtx);
             const active = filter === opt.id;
             const Icon = FILTER_ICONS[opt.id];
             return (
               <button
                 key={opt.id}
                 type="button"
+                title={
+                  opt.id === "planer_entwurf"
+                    ? "Im Planer auf einen Tag gezogen, Tag noch nicht finalisiert — noch nicht im Kalender gebucht."
+                    : undefined
+                }
                 onClick={() => setFilter(opt.id)}
                 className={cn(
                   "flex w-full min-w-[8rem] items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] transition-colors",
@@ -398,33 +408,26 @@ export function TasksClient({
               <p className="text-[11px] font-medium uppercase tracking-wide text-leif-muted">
                 {TASK_SMART_FILTER_OPTIONS.find((o) => o.id === filter)?.label ?? "Tasks"}
               </p>
-              <div className="flex max-w-full flex-col items-end gap-0.5 text-right">
-                <label
-                  htmlFor="tasks-group-by-type"
-                  title={groupByTypeHintTitle}
-                  aria-describedby={groupByTypeDescId}
-                  className="flex cursor-pointer select-none items-center gap-2 text-[12px] font-medium text-leif-secondary"
-                >
-                  <input
-                    id="tasks-group-by-type"
-                    type="checkbox"
-                    checked={groupByType}
-                    onChange={(e) => setGroupByType(e.target.checked)}
-                    className="size-3.5 shrink-0 rounded border-leif-border text-leif-primary focus:ring-2 focus:ring-leif-primary/30"
-                  />
-                  Nach Art gruppieren
-                </label>
-                <p
-                  id={groupByTypeDescId}
-                  className="max-w-[min(100%,24rem)] text-[10px] leading-snug text-leif-muted"
-                >
-                  {typeGroupQuickOrder}
-                </p>
-              </div>
+              <label
+                htmlFor="tasks-group-by-type"
+                title="Gruppiert nach Task-Art (Reihenfolge wie in den Einstellungen); Aufgaben ohne Art unter „Ohne Art“."
+                className="flex cursor-pointer select-none items-center gap-2 text-[12px] font-medium text-leif-secondary"
+              >
+                <input
+                  id="tasks-group-by-type"
+                  type="checkbox"
+                  checked={groupByType}
+                  onChange={(e) => setGroupByType(e.target.checked)}
+                  className="size-3.5 shrink-0 rounded border-leif-border text-leif-primary focus:ring-2 focus:ring-leif-primary/30"
+                />
+                Nach Art gruppieren
+              </label>
             </div>
             {listTasks.length === 0 ? (
               <div className="rounded-lg border border-dashed border-leif-border/90 px-4 py-10 text-center text-[13px] text-leif-secondary">
-                Keine Tasks für diesen Filter.
+                {filter === "planer_entwurf"
+                  ? "Keine Tasks im Planer-Entwurf. Tasks erscheinen hier, sobald du sie im Planer auf einen Tag ziehst (ohne den Tag zu finalisieren)."
+                  : "Keine Tasks für diesen Filter."}
               </div>
             ) : taskGroups.length === 1 ? (
               groupByType ? (
